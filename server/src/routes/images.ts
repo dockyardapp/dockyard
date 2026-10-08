@@ -8,6 +8,7 @@ import type { FastifyInstance } from 'fastify';
 import { z } from 'zod';
 import { listImages, pullImage, removeImage } from '../docker/index.ts';
 import { requireRole } from '../auth/rbac.ts';
+import { filterVisible } from '../auth/scope.ts';
 import { auditFromRequest } from '../auth/audit.ts';
 
 const pullSchema = z.object({ ref: z.string().trim().min(1).max(500) });
@@ -20,8 +21,14 @@ function truthy(v: string | undefined): boolean {
 }
 
 export default async function imagesRoutes(app: FastifyInstance): Promise<void> {
-  app.get('/images', { preHandler: requireRole('viewer') }, async (_req, reply) => {
-    return reply.code(200).send(await listImages());
+  // Images carry no labels, so they can only be allocated by id or repo tag.
+  // A scoped user with no image grants sees an empty list; deploying still works,
+  // because the engine pulls an image on demand rather than requiring a local one.
+  app.get('/images', { preHandler: requireRole('viewer') }, async (req, reply) => {
+    const images = await listImages();
+    return reply
+      .code(200)
+      .send(filterVisible(req.scope, 'image', images, (i) => ({ id: i.id, repoTags: i.repoTags })));
   });
 
   // Pulling a large image can take a while; the client is expected to allow ~120s.

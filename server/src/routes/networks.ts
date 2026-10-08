@@ -8,6 +8,7 @@ import type { FastifyInstance } from 'fastify';
 import { z } from 'zod';
 import { createNetwork, listNetworks, removeNetwork } from '../docker/index.ts';
 import { requireRole } from '../auth/rbac.ts';
+import { filterVisible, grantLabel } from '../auth/scope.ts';
 import { auditFromRequest } from '../auth/audit.ts';
 
 const createSchema = z.object({
@@ -17,13 +18,20 @@ const createSchema = z.object({
 });
 
 export default async function networksRoutes(app: FastifyInstance): Promise<void> {
-  app.get('/networks', { preHandler: requireRole('viewer') }, async (_req, reply) => {
-    return reply.code(200).send(await listNetworks());
+  app.get('/networks', { preHandler: requireRole('viewer') }, async (req, reply) => {
+    const networks = await listNetworks();
+    return reply
+      .code(200)
+      .send(filterVisible(req.scope, 'network', networks, (n) => ({ name: n.name, labels: n.labels })));
   });
 
   app.post('/networks', { preHandler: requireRole('operator') }, async (req, reply) => {
     const { name, driver, labels } = createSchema.parse(req.body ?? {});
-    const network = await createNetwork(name, { driver, labels });
+    const inherited = grantLabel(req.scope, 'network');
+    const network = await createNetwork(name, {
+      driver,
+      labels: inherited ? { ...labels, ...inherited } : labels,
+    });
     await auditFromRequest(req, 'network.create', 'network', name, { name, driver });
     return reply.code(200).send(network);
   });

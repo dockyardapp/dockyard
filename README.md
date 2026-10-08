@@ -75,6 +75,7 @@ GET    /api/templates                  POST /api/templates/:slug/deploy
 GET    /api/tunnels                    POST /api/tunnels
 POST   /api/tunnels/:id/:action
 GET    /api/cloudflare/status          POST /api/cloudflare/credentials
+GET    /api/users                      POST /api/users/:id/grants
 ```
 
 WebSocket endpoints: `/ws/containers/:id/logs`, `/ws/containers/:id/stats`, `/ws/events`.
@@ -85,6 +86,45 @@ WebSocket endpoints: `/ws/containers/:id/logs`, `/ws/containers/:id/stats`, `/ws
 user is created from `DOCKYARD_ADMIN_EMAIL` / `DOCKYARD_ADMIN_PASSWORD` on first boot, or through
 `POST /api/auth/bootstrap` while the users table is empty. Every mutating call lands in
 `audit_log`.
+
+### Resource allocation
+
+The role ladder decides what a user may **do**. It does not decide what they may **see** — by
+default every authenticated user sees the whole host. `users.scope_mode` adds that second axis:
+
+- `all` (the default) — the whole host, unchanged from before.
+- `granted` — exactly the resources listed in `user_grants`, nothing else.
+
+A grant is either an explicit resource (`resource_id`) or a label selector (`label_key` +
+`label_value`), never both. **Prefer labels**: an explicit container id stops matching the moment
+that container is recreated, whereas a label survives it.
+
+```
+GET    /api/users/:id/grants            list the allocation
+POST   /api/users/:id/grants            allocate one resource
+DELETE /api/users/:id/grants/:grantId   revoke one
+DELETE /api/users/:id/grants            revoke all
+```
+
+Enforcement lives at the route boundary: list endpoints filter, per-id endpoints answer `404`.
+A scoped-out resource returns `404` rather than `403` on purpose, because a `403` confirms the
+resource exists and would let a restricted user enumerate the host by probing ids. Dashboard
+counts are recomputed for a scoped user, since the engine totals describe the whole host.
+
+Anything a scoped user creates inherits their grant label, so their own work stays visible: a
+container they run, a volume they add, a stack they deploy from an allocated template.
+
+Two things are deliberately not on the ladder:
+
+- **Admins are never scoped.** Setting `scope_mode = 'granted'` on an admin is rejected, so there
+  is always one account that can undo a bad allocation.
+- **`exec` is not an operator right.** The panel mounts the Docker socket, so a shell in any
+  container is root-equivalent on the host. It needs the explicit `users.can_exec` flag;
+  administrators bypass it. The flag only applies to operators, since the route requires that role
+  anyway.
+
+An allocated user sees a notice at the top of every page explaining why their lists are short,
+because an unexplained empty panel reads as a bug.
 
 ## Templates
 
@@ -129,11 +169,17 @@ logged.
 
 ```bash
 export PATH=/root/.hermes/node/bin:$PATH
-node --test server/test/            # migrations, docker layer, api, tunnels, templates
-npx tsc -p server/tsconfig.json --noEmit
+npm test                               # server: migrations, docker, api, tunnels, templates, scope
 npm --workspace web run typecheck
+npm --workspace web run test           # component and page tests (vitest)
+npm --workspace web run build
+npx playwright test --config web/playwright.config.ts   # end-to-end against a real API
 ```
 
 `server/test/mock-docker.ts` is a test double that speaks the subset of the Docker Engine API this
 panel uses, so the suite runs without a daemon. When a real daemon is reachable the tests exercise
-it too.
+it too — including the scoping tests, which create real containers and check that a scoped session
+cannot list, inspect, stop or exec into one it was not allocated.
+
+The end-to-end suite raises the login rate limit (`DOCKYARD_LOGIN_RATE_MAX`) because it signs in
+many throwaway accounts from one IP. The shipped default stays at 10 per minute.

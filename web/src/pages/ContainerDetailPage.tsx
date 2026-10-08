@@ -52,6 +52,9 @@ export function ContainerDetailPage() {
   const confirm = useConfirm();
   const canWrite = can.write(user?.role);
   const canDestroy = can.destroy(user?.role);
+  // Exec needs both the operator role and the explicit capability: on a host with
+  // the Docker socket mounted a shell in a container is root-equivalent.
+  const canExec = canWrite && can.exec(user?.role, user?.can_exec);
 
   const detail = usePolling<ContainerDetail>(() => endpoints.containers.get(id), {
     intervalMs: 15000,
@@ -230,7 +233,9 @@ export function ContainerDetailPage() {
       {tab === 'logs' ? <LogViewer containerId={id} /> : null}
       {tab === 'stats' ? <StatsTab containerId={id} state={c?.state} /> : null}
       {tab === 'inspect' ? <InspectTab containerId={id} /> : null}
-      {tab === 'console' ? <ConsoleTab containerId={id} canWrite={canWrite} /> : null}
+      {tab === 'console' ? (
+        <ConsoleTab containerId={id} canExec={canExec} canWrite={canWrite} />
+      ) : null}
     </>
   );
 }
@@ -513,7 +518,15 @@ function InspectTab({ containerId }: { containerId: string }) {
 
 type ExecResult = { cmd: string[]; stdout: string; stderr: string; exitCode: number };
 
-function ConsoleTab({ containerId, canWrite }: { containerId: string; canWrite: boolean }) {
+function ConsoleTab({
+  containerId,
+  canExec,
+  canWrite,
+}: {
+  containerId: string;
+  canExec: boolean;
+  canWrite: boolean;
+}) {
   const [input, setInput] = useState('');
   const [results, setResults] = useState<ExecResult[]>([]);
   const [busy, setBusy] = useState(false);
@@ -538,9 +551,11 @@ function ConsoleTab({ containerId, canWrite }: { containerId: string; canWrite: 
   return (
     <div className="stack">
       {error ? <Banner tone="error" title="Command failed">{error}</Banner> : null}
-      {!canWrite ? (
-        <Banner tone="warn" title="Read-only role">
-          Running commands in a container requires the operator role.
+      {!canExec ? (
+        <Banner tone="warn" title="Exec not enabled">
+          {canWrite
+            ? 'Running commands in a container is disabled for this account. An administrator can enable it under Settings.'
+            : 'Running commands in a container requires the operator role.'}
         </Banner>
       ) : null}
 
@@ -573,11 +588,11 @@ function ConsoleTab({ containerId, canWrite }: { containerId: string; canWrite: 
             }}
             placeholder="sh -c 'ls -la /'"
             aria-label="Command"
-            disabled={!canWrite || busy}
+            disabled={!canExec || busy}
             className="mono"
             style={{ flex: 1 }}
           />
-          <Button variant="primary" icon="play" busy={busy} disabled={!canWrite || !input.trim()} onClick={() => void run()}>
+          <Button variant="primary" icon="play" busy={busy} disabled={!canExec || !input.trim()} onClick={() => void run()}>
             Run
           </Button>
         </div>

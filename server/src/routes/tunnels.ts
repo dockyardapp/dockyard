@@ -12,9 +12,11 @@ import type { FastifyInstance } from 'fastify';
 import { z } from 'zod';
 import { auditFromRequest } from '../auth/audit.ts';
 import { requireRole, sendError } from '../auth/rbac.ts';
+import { denyScoped } from '../auth/scope.ts';
 import { logger } from '../logger.ts';
 import { TunnelError, tunnelManager } from '../tunnels/manager.ts';
 import type { CreateTunnelInput } from '../tunnels/manager.ts';
+import { canSeeTunnel, filterTunnels } from '../tunnels/visibility.ts';
 
 const createTunnelSchema = z
   .object({
@@ -72,9 +74,9 @@ function fail(reply: Parameters<typeof sendError>[0], err: unknown) {
 }
 
 export default async function tunnelRoutes(app: FastifyInstance): Promise<void> {
-  app.get('/api/tunnels', { preHandler: requireRole('viewer') }, async (_req, reply) => {
+  app.get('/api/tunnels', { preHandler: requireRole('viewer') }, async (req, reply) => {
     try {
-      return await tunnelManager.list();
+      return await filterTunnels(req.scope, await tunnelManager.list());
     } catch (err) {
       return fail(reply, err);
     }
@@ -101,6 +103,7 @@ export default async function tunnelRoutes(app: FastifyInstance): Promise<void> 
       const { id } = req.params as { id: string };
       const tunnel = await tunnelManager.get(id);
       if (!tunnel) return sendError(reply, 404, 'not_found', `tunnel '${id}' was not found`);
+      if (!(await canSeeTunnel(req.scope, tunnel))) return denyScoped(reply, 'tunnel', id);
       return tunnel;
     } catch (err) {
       return fail(reply, err);
@@ -113,6 +116,8 @@ export default async function tunnelRoutes(app: FastifyInstance): Promise<void> 
       if (action !== 'start' && action !== 'stop') {
         return sendError(reply, 400, 'validation_error', `unknown tunnel action '${action}'`);
       }
+      const before = await tunnelManager.get(id);
+      if (before && !(await canSeeTunnel(req.scope, before))) return denyScoped(reply, 'tunnel', id);
       const tunnel =
         action === 'start' ? await tunnelManager.start(id) : await tunnelManager.stop(id);
       await auditFromRequest(req, `tunnel.${action}`, 'tunnel', id, { name: tunnel.name });

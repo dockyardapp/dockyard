@@ -8,6 +8,8 @@
 import type { FastifyInstance } from 'fastify';
 import { z } from 'zod';
 import { requireRole, sendError } from '../auth/rbac.ts';
+import { canSee, denyScoped, isUnrestricted } from '../auth/scope.ts';
+import type { Scope } from '../auth/scope.ts';
 import { auditFromRequest } from '../auth/audit.ts';
 import {
   listStacks,
@@ -17,6 +19,7 @@ import {
   removeStack,
   StackNotFoundError,
 } from '../stacks.ts';
+import type { StackWithContainers } from '../stacks.ts';
 
 const STACK_ACTIONS = ['start', 'stop'] as const;
 
@@ -28,15 +31,31 @@ function truthy(v: string | undefined): boolean {
   return s === '1' || s === 'true' || s === 'yes' || s === 'on';
 }
 
+/**
+ * A stack is visible when it is granted directly, or when any of its containers
+ * is. The second half is what makes label grants work: a scoped user deploys a
+ * template, the container inherits their grant label, and the stack comes along
+ * with it.
+ */
+function canSeeStack(scope: Scope, stack: StackWithContainers): boolean {
+  if (isUnrestricted(scope)) return true;
+  if (canSee(scope, 'stack', { id: stack.id, name: stack.name, slug: stack.slug })) return true;
+  return stack.containers.some((c) =>
+    canSee(scope, 'container', { id: c.id, name: c.name, labels: c.labels }),
+  );
+}
+
 export default async function stacksRoutes(app: FastifyInstance): Promise<void> {
-  app.get('/stacks', { preHandler: requireRole('viewer') }, async (_req, reply) => {
-    return reply.code(200).send(await listStacks());
+  app.get('/stacks', { preHandler: requireRole('viewer') }, async (req, reply) => {
+    const stacks = await listStacks();
+    return reply.code(200).send(stacks.filter((s) => canSeeStack(req.scope, s)));
   });
 
   app.get('/stacks/:id', { preHandler: requireRole('viewer') }, async (req, reply) => {
     const { id } = req.params as { id: string };
     const stack = await getStack(id);
     if (!stack) return sendError(reply, 404, 'not_found', `stack not found: ${id}`);
+    if (!canSeeStack(req.scope, stack)) return denyScoped(reply, 'stack', id);
     return reply.code(200).send(stack);
   });
 
@@ -47,6 +66,11 @@ export default async function stacksRoutes(app: FastifyInstance): Promise<void> 
         allowed: STACK_ACTIONS,
       });
     }
+
+    // Check the allocation before touching anything; a stack the caller cannot
+    // see must not be startable or stoppable.
+    const existing = await getStack(id);
+    if (existing && !canSeeStack(req.scope, existing)) return denyScoped(reply, 'stack', id);
 
     try {
       const stack = action === 'start' ? await startStack(id) : await stopStack(id);

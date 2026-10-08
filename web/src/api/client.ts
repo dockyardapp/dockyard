@@ -6,6 +6,7 @@
  */
 
 import type {
+  AdminUser,
   AuditEntry,
   CloudflareCredsResponse,
   CloudflareStatus,
@@ -17,6 +18,7 @@ import type {
   CreateTunnelInput,
   DeployResponse,
   ExecResponse,
+  Grant,
   ImageSummary,
   LoginResponse,
   MeResponse,
@@ -24,6 +26,8 @@ import type {
   OkResponse,
   PublicUser,
   PullResponse,
+  ResourceKind,
+  ScopeMode,
   SettingsView,
   StackWithContainers,
   SystemInfo,
@@ -158,11 +162,35 @@ export const endpoints = {
     logout: () => api.post<OkResponse>('/api/auth/logout'),
   },
   users: {
-    list: () => api.get<PublicUser[]>('/api/users'),
-    create: (input: { email: string; password: string; role: UserRole }) => api.post<PublicUser>('/api/users', input),
-    update: (id: string, input: { role?: UserRole; password?: string }) =>
-      api.patch<PublicUser>(`/api/users/${encodeURIComponent(id)}`, input),
+    list: () => api.get<AdminUser[]>('/api/users'),
+    create: (input: {
+      email: string;
+      password: string;
+      role: UserRole;
+      scope_mode?: ScopeMode;
+      can_exec?: boolean;
+    }) => api.post<PublicUser>('/api/users', input),
+    update: (
+      id: string,
+      input: { role?: UserRole; password?: string; scope_mode?: ScopeMode; can_exec?: boolean },
+    ) => api.patch<PublicUser>(`/api/users/${encodeURIComponent(id)}`, input),
     remove: (id: string) => api.del<OkResponse>(`/api/users/${encodeURIComponent(id)}`),
+    grants: (id: string) => api.get<Grant[]>(`/api/users/${encodeURIComponent(id)}/grants`),
+    addGrant: (
+      id: string,
+      input: {
+        resource_kind: ResourceKind;
+        resource_id?: string;
+        label_key?: string;
+        label_value?: string;
+      },
+    ) => api.post<Grant>(`/api/users/${encodeURIComponent(id)}/grants`, input),
+    clearGrants: (id: string) =>
+      api.del<{ ok: boolean; removed: number }>(`/api/users/${encodeURIComponent(id)}/grants`),
+    removeGrant: (id: string, grantId: string) =>
+      api.del<OkResponse>(
+        `/api/users/${encodeURIComponent(id)}/grants/${encodeURIComponent(grantId)}`,
+      ),
   },
   containers: {
     list: (opts?: { all?: boolean; q?: string }) =>

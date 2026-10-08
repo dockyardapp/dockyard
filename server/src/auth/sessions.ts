@@ -10,6 +10,8 @@ import { config } from '../config.ts';
 import { one, query } from '../db/pool.ts';
 import { publicUser } from './rbac.ts';
 import type { PublicUser } from './rbac.ts';
+import { loadScope, ALL_SCOPE } from './scope.ts';
+import type { Scope } from './scope.ts';
 
 export const SESSION_COOKIE = 'dockyard_session';
 
@@ -19,6 +21,11 @@ declare module 'fastify' {
     user: PublicUser | null;
     /** The raw session token from the cookie, if any. */
     sessionToken: string | null;
+    /**
+     * What this user may see. `{mode:'all'}` for admins and unscoped users, so
+     * a route can call `filterVisible(req.scope, …)` unconditionally.
+     */
+    scope: Scope;
   }
 }
 
@@ -69,7 +76,7 @@ export function clearSessionCookie(reply: FastifyReply): void {
 export async function readSession(token: string | undefined | null): Promise<PublicUser | null> {
   if (!token) return null;
   const row = await one(
-    `select u.id, u.email, u.role, u.created_at, u.last_login_at
+    `select u.id, u.email, u.role, u.scope_mode, u.can_exec, u.created_at, u.last_login_at
        from sessions s
        join users u on u.id = s.user_id
       where s.token_hash = $1 and s.expires_at > now()`,
@@ -85,13 +92,17 @@ export function sessionTokenFromRequest(req: FastifyRequest): string | null {
 }
 
 /**
- * preHandler / helper: populate `request.user` and `request.sessionToken` from the
- * cookie. Never sends a response — routes decide what an anonymous caller may see.
+ * preHandler / helper: populate `request.user`, `request.sessionToken` and
+ * `request.scope` from the cookie. Never sends a response — routes decide what
+ * an anonymous caller may see.
  */
 export async function authenticate(req: FastifyRequest): Promise<void> {
+  // requireRole calls this, and so do several routes directly; load once.
+  if (req.scope) return;
   const token = sessionTokenFromRequest(req);
   req.sessionToken = token;
   req.user = token ? await readSession(token) : null;
+  req.scope = req.user ? await loadScope(req.user) : ALL_SCOPE;
 }
 
 export async function destroySession(token: string): Promise<void> {

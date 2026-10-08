@@ -12,10 +12,17 @@ import { authenticate } from './sessions.ts';
 
 export type Role = 'admin' | 'operator' | 'viewer';
 
+/** Whether the user sees the whole host, or only what has been allocated. */
+export type ScopeMode = 'all' | 'granted';
+
 export type PublicUser = {
   id: string;
   email: string;
   role: Role;
+  /** 'granted' means only allocated resources are visible. Admins are never scoped. */
+  scope_mode: ScopeMode;
+  /** May POST /containers/:id/exec. Separate from the role: exec is root-equivalent. */
+  can_exec: boolean;
   created_at: string;
   last_login_at: string | null;
 };
@@ -47,6 +54,8 @@ export function publicUser(row: {
   id: unknown;
   email: unknown;
   role: unknown;
+  scope_mode?: unknown;
+  can_exec?: unknown;
   created_at?: unknown;
   last_login_at?: unknown;
 }): PublicUser {
@@ -54,6 +63,8 @@ export function publicUser(row: {
     id: String(row.id),
     email: String(row.email),
     role: (isRole(row.role) ? row.role : 'viewer') as Role,
+    scope_mode: row.scope_mode === 'granted' ? 'granted' : 'all',
+    can_exec: row.can_exec === true,
     created_at: toIso(row.created_at),
     last_login_at: row.last_login_at == null ? null : toIso(row.last_login_at),
   };

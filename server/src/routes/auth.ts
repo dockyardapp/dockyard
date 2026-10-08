@@ -8,6 +8,7 @@
 import type { FastifyInstance } from 'fastify';
 import { z } from 'zod';
 import { one, query } from '../db/pool.ts';
+import { config } from '../config.ts';
 import { logger } from '../logger.ts';
 import { dummyVerify, hashPassword, verifyPassword } from '../auth/password.ts';
 import { publicUser, sendError } from '../auth/rbac.ts';
@@ -26,7 +27,7 @@ const credentials = z.object({
   password: z.string().min(1).max(1000),
 });
 
-const USER_COLUMNS = 'id, email, role, created_at, last_login_at';
+const USER_COLUMNS = 'id, email, role, scope_mode, can_exec, created_at, last_login_at';
 
 export default async function authRoutes(app: FastifyInstance): Promise<void> {
   // First-run admin creation. 409 as soon as any user exists.
@@ -63,18 +64,23 @@ export default async function authRoutes(app: FastifyInstance): Promise<void> {
   // Login — always runs a verify (real or dummy) so timing does not leak account existence.
   app.post(
     '/auth/login',
-    { config: { rateLimit: { max: 10, timeWindow: '1 minute' } } },
+    { config: { rateLimit: { max: config.loginRateMax, timeWindow: '1 minute' } } },
     async (req, reply) => {
       const { email, password } = credentials.parse(req.body ?? {});
       const row = await one<{
         id: string;
         email: string;
         role: string;
+        scope_mode: string;
+        can_exec: boolean;
         password_hash: string;
         created_at: unknown;
         last_login_at: unknown;
       }>(
-        `select id, email, role, password_hash, created_at, last_login_at
+        // scope_mode and can_exec belong here: the sign-in response seeds the
+        // client's idea of the session, and without them a scoped user sees an
+        // unscoped panel until the next /auth/me refresh.
+        `select id, email, role, scope_mode, can_exec, password_hash, created_at, last_login_at
            from users where lower(email) = lower($1)`,
         [email],
       );

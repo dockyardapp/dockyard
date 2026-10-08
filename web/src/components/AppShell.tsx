@@ -4,7 +4,7 @@ import { useAuth } from '../hooks/useAuth';
 import { useEvents } from '../hooks/useEvents';
 import { can } from '../lib/rbac';
 import { BrandMark, Icon, type IconName } from './Icons';
-import { Button, Pill } from './ui';
+import { Banner, Button, Pill } from './ui';
 
 type NavEntry = { to: string; label: string; icon: IconName; adminOnly?: boolean };
 
@@ -111,7 +111,10 @@ export function AppShell() {
               <div className="truncate" style={{ color: 'var(--text-primary)', fontSize: 'var(--fs-xs)' }} title={user?.email}>
                 {user?.email ?? 'signed out'}
               </div>
-              <div className="dim" style={{ fontSize: 'var(--fs-micro)' }}>{user?.role ?? '-'}</div>
+              <div className="dim" style={{ fontSize: 'var(--fs-micro)' }}>
+                {user?.role ?? '-'}
+                {user?.scope_mode === 'granted' ? ' / scoped' : ''}
+              </div>
             </div>
             <Button
               variant="subtle"
@@ -145,6 +148,14 @@ export function AppShell() {
           </div>
         </header>
         <main className="content">
+          {/* Without this an allocated user just sees short lists and assumes the
+              panel is broken. */}
+          {user?.scope_mode === 'granted' ? (
+            <Banner tone="info" title="Scoped account">
+              You are seeing only the resources allocated to you. Ask an administrator to widen your
+              allocation if something is missing.
+            </Banner>
+          ) : null}
           <Outlet />
         </main>
       </div>

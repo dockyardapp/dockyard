@@ -1,9 +1,10 @@
 import { useState } from 'react';
 import { endpoints, errorMessage } from '../api/client';
-import type { CloudflareStatus, PublicUser, SettingsView, UserRole } from '../api/types';
+import type { AdminUser, CloudflareStatus, SettingsView, UserRole } from '../api/types';
 import { usePolling } from '../hooks/usePolling';
 import { useAuth } from '../hooks/useAuth';
 import { CloudflarePanel } from './TunnelsPage';
+import { AllocationDialog } from '../components/AllocationDialog';
 import {
   Banner,
   Button,
@@ -26,13 +27,22 @@ export function SettingsPage() {
   const confirm = useConfirm();
 
   const cf = usePolling<CloudflareStatus>(() => endpoints.cloudflare.status(), { intervalMs: 30000 });
-  const users = usePolling<PublicUser[]>(() => endpoints.users.list(), { intervalMs: 30000 });
+  const users = usePolling<AdminUser[]>(() => endpoints.users.list(), { intervalMs: 30000 });
   const settings = usePolling<SettingsView>(() => endpoints.settings.get(), {});
 
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
   const [pending, setPending] = useState<Record<string, boolean>>({});
-  const [resetUser, setResetUser] = useState<PublicUser | null>(null);
+  const [resetUser, setResetUser] = useState<AdminUser | null>(null);
+  const [allocUser, setAllocUser] = useState<AdminUser | null>(null);
+  // The dialog renders the scope badge from the user it is given, so hand it the
+  // freshest row rather than the snapshot captured when it was opened. Otherwise
+  // allocating the first resource leaves it saying "unscoped" and warning that
+  // grants have no effect, which is no longer true.
+  const allocLive =
+    allocUser && users.data
+      ? users.data.find((u) => u.id === allocUser.id) ?? allocUser
+      : allocUser;
   const [resetPassword, setResetPassword] = useState('');
   const [settingsText, setSettingsText] = useState<string | null>(null);
   const [settingsBusy, setSettingsBusy] = useState(false);
@@ -52,7 +62,7 @@ export function SettingsPage() {
     }
   };
 
-  const changeRole = async (u: PublicUser, role: UserRole) => {
+  const changeRole = async (u: AdminUser, role: UserRole) => {
     setPending((p) => ({ ...p, [`${u.id}:role`]: true }));
     setError(null);
     try {
@@ -62,6 +72,31 @@ export function SettingsPage() {
       setError(errorMessage(err));
     } finally {
       setPending((p) => ({ ...p, [`${u.id}:role`]: false }));
+    }
+  };
+
+  const toggleExec = async (u: AdminUser, canExec: boolean) => {
+    setPending((p) => ({ ...p, [`${u.id}:exec`]: true }));
+    setError(null);
+    // Move the checkbox now: a controlled input that only reacts after a network
+    // round-trip reads as broken.
+    users.setData((prev) =>
+      (prev ?? []).map((row) => (row.id === u.id ? { ...row, can_exec: canExec } : row)),
+    );
+    try {
+      await endpoints.users.update(u.id, { can_exec: canExec });
+      setNotice(
+        canExec
+          ? `Container exec enabled for ${u.email}.`
+          : `Container exec disabled for ${u.email}.`,
+      );
+      await users.refresh();
+    } catch (err) {
+      setError(errorMessage(err));
+      // Put the row back the way the server still has it.
+      await users.refresh();
+    } finally {
+      setPending((p) => ({ ...p, [`${u.id}:exec`]: false }));
     }
   };
 
@@ -81,7 +116,7 @@ export function SettingsPage() {
     }
   };
 
-  const deleteUser = async (u: PublicUser) => {
+  const deleteUser = async (u: AdminUser) => {
     const ok = await confirm({
       title: `Delete user ${u.email}?`,
       body: 'Their sessions are revoked and they lose access immediately.',
@@ -164,6 +199,8 @@ export function SettingsPage() {
                 <tr>
                   <th>Email</th>
                   <th>Role</th>
+                  <th>Access</th>
+                  <th>Exec</th>
                   <th>Created</th>
                   <th>Last login</th>
                   <th className="num">Actions</th>
@@ -190,6 +227,42 @@ export function SettingsPage() {
                           </option>
                         ))}
                       </select>
+                    </td>
+                    <td data-label="Access">
+                      <Button
+                        size="sm"
+                        onClick={() => setAllocUser(u)}
+                        aria-label={`Resource allocation for ${u.email}`}
+                        title={
+                          u.role === 'admin'
+                            ? 'Administrators always see every resource'
+                            : 'Choose which resources this user may see'
+                        }
+                      >
+                        {u.role === 'admin'
+                          ? 'full host'
+                          : u.scope_mode === 'granted'
+                            ? `${u.grant_count} allocated`
+                            : 'full host'}
+                      </Button>
+                    </td>
+                    <td data-label="Exec">
+                      <input
+                        type="checkbox"
+                        checked={u.role === 'admin' ? true : u.can_exec}
+                        disabled={
+                          u.role === 'admin' || u.role === 'viewer' || pending[`${u.id}:exec`]
+                        }
+                        aria-label={`Allow container exec for ${u.email}`}
+                        title={
+                          u.role === 'admin'
+                            ? 'Administrators can always run commands'
+                            : u.role === 'viewer'
+                              ? 'Exec requires the operator role'
+                              : 'Allow this user to run commands inside containers'
+                        }
+                        onChange={(e) => void toggleExec(u, e.target.checked)}
+                      />
                     </td>
                     <td className="dim nowrap" data-label="Created">{formatDateTime(u.created_at)}</td>
                     <td className="dim nowrap" data-label="Last login">
@@ -259,6 +332,14 @@ export function SettingsPage() {
           </>
         )}
       </Card>
+
+      <AllocationDialog
+        user={allocLive}
+        onClose={() => setAllocUser(null)}
+        onChanged={async () => {
+          await users.refresh();
+        }}
+      />
 
       <Dialog
         open={resetUser !== null}

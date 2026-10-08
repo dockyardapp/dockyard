@@ -258,13 +258,45 @@ export type SystemInfo = {
 
 export type UserRole = 'admin' | 'operator' | 'viewer';
 
+/** 'granted' means the user sees only the resources allocated to them. */
+export type ScopeMode = 'all' | 'granted';
+
+export type ResourceKind =
+  | 'container'
+  | 'stack'
+  | 'volume'
+  | 'network'
+  | 'image'
+  | 'template'
+  | 'tunnel';
+
+/**
+ * One allocated resource. Either an explicit `resource_id`, or a label selector
+ * (`label_key`/`label_value`). The label form is the durable one: it survives a
+ * container being deleted and recreated.
+ */
+export type Grant = {
+  id: string;
+  resource_kind: ResourceKind;
+  resource_id: string | null;
+  label_key: string | null;
+  label_value: string | null;
+};
+
 export type PublicUser = {
   id: string;
   email: string;
   role: UserRole;
+  /** Admins are never scoped, so this is always 'all' for them. */
+  scope_mode: ScopeMode;
+  /** May run commands inside a container. Separate from the role. */
+  can_exec: boolean;
   created_at: string;
   last_login_at: string | null;
 };
+
+/** The admin user list carries the allocation size as well. */
+export type AdminUser = PublicUser & { grant_count: number };
 
 /* ----------------------------------------------------------------- §6 audit */
 

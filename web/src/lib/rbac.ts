@@ -17,6 +17,13 @@ export const can = {
   manageUsers: (role: UserRole | null | undefined) => atLeast(role, 'admin'),
   manageSettings: (role: UserRole | null | undefined) => atLeast(role, 'admin'),
   viewAudit: (role: UserRole | null | undefined) => atLeast(role, 'admin'),
+  /**
+   * Run commands inside a container. Not conferred by the role ladder: exec is
+   * root-equivalent on a host with the Docker socket mounted, so it needs the
+   * explicit `can_exec` flag. Admins always may.
+   */
+  exec: (role: UserRole | null | undefined, canExec?: boolean | null) =>
+    role === 'admin' || (role === 'operator' && canExec === true),
 };
 
 export function roleRank(role: UserRole): number {

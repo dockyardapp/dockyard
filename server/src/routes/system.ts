@@ -14,9 +14,15 @@ import type { FastifyInstance } from 'fastify';
 import { config, repoRoot } from '../config.ts';
 import { logger } from '../logger.ts';
 import { one } from '../db/pool.ts';
+import { many } from '../db/pool.ts';
 import { dbHealth } from '../db/pool.ts';
-import { dockerPing, listNetworks, listVolumes } from '../docker/index.ts';
+import { dockerPing, listContainers, listImages, listNetworks, listVolumes } from '../docker/index.ts';
+import { listStacks } from '../stacks.ts';
+import { tunnelManager } from '../tunnels/manager.ts';
+import { filterTunnels } from '../tunnels/visibility.ts';
 import { authenticate } from '../auth/sessions.ts';
+import { canSee, filterVisible, isUnrestricted } from '../auth/scope.ts';
+import type { Scope } from '../auth/scope.ts';
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -126,6 +132,84 @@ async function safeLen(fn: () => Promise<unknown[]>): Promise<number> {
   }
 }
 
+type Counts = {
+  containers: number;
+  running: number;
+  images: number;
+  volumes: number;
+  networks: number;
+  tunnels: number;
+  tunnelsActive: number;
+  stacks: number;
+  templates: number;
+};
+
+const ZERO_COUNTS: Counts = {
+  containers: 0,
+  running: 0,
+  images: 0,
+  volumes: 0,
+  networks: 0,
+  tunnels: 0,
+  tunnelsActive: 0,
+  stacks: 0,
+  templates: 0,
+};
+
+/**
+ * Dashboard counts for a scoped user.
+ *
+ * These have to be recomputed rather than read off the engine, because the
+ * totals in `dockerPing()` describe the whole host. Leaving them unscoped would
+ * leak the size of everything the user cannot see — the counts are the one place
+ * scoping is easy to forget.
+ */
+async function scopedCounts(scope: Scope): Promise<Counts> {
+  const [containers, images, volumes, networks, stacks, tunnels, templates] = await Promise.all([
+    listContainers({ all: true }).catch(() => []),
+    listImages().catch(() => []),
+    listVolumes().catch(() => []),
+    listNetworks().catch(() => []),
+    listStacks().catch(() => []),
+    tunnelManager.list().catch(() => []),
+    safeRows('select id, slug from templates'),
+  ]);
+
+  const visibleContainers = filterVisible(scope, 'container', containers, (c) => ({
+    id: c.id,
+    name: c.name,
+    labels: c.labels,
+  }));
+  const visibleStacks = stacks.filter(
+    (s) =>
+      canSee(scope, 'stack', { id: s.id, name: s.name, slug: s.slug }) ||
+      s.containers.some((c) =>
+        canSee(scope, 'container', { id: c.id, name: c.name, labels: c.labels }),
+      ),
+  );
+  const visibleTunnels = await filterTunnels(scope, tunnels);
+
+  return {
+    containers: visibleContainers.length,
+    running: visibleContainers.filter((c) => c.state === 'running').length,
+    images: filterVisible(scope, 'image', images, (i) => ({ id: i.id, repoTags: i.repoTags })).length,
+    volumes: filterVisible(scope, 'volume', volumes, (v) => ({ name: v.name, labels: v.labels })).length,
+    networks: filterVisible(scope, 'network', networks, (n) => ({ name: n.name, labels: n.labels })).length,
+    tunnels: visibleTunnels.length,
+    tunnelsActive: visibleTunnels.filter((t) => t.status === 'running').length,
+    stacks: visibleStacks.length,
+    templates: filterVisible(scope, 'template', templates, (t) => ({ id: t.id, slug: t.slug })).length,
+  };
+}
+
+async function safeRows(sql: string): Promise<Array<{ id: string; slug: string }>> {
+  try {
+    return await many<{ id: string; slug: string }>(sql);
+  } catch {
+    return [];
+  }
+}
+
 // ---------------------------------------------------------------------------
 // Routes
 // ---------------------------------------------------------------------------
@@ -156,19 +240,30 @@ export default async function systemRoutes(app: FastifyInstance): Promise<void> 
       if (docker.images !== undefined) dockerOut.images = docker.images;
     }
 
-    const counts = authed
-      ? {
-          containers: docker.containers?.total ?? 0,
-          running: docker.containers?.running ?? 0,
-          images: docker.images ?? 0,
-          volumes: await safeLen(() => listVolumes()),
-          networks: await safeLen(() => listNetworks()),
-          tunnels: await safeCount('select count(*)::int as n from tunnels'),
-          tunnelsActive: await safeCount("select count(*)::int as n from tunnels where status = 'running'"),
-          stacks: await safeCount('select count(*)::int as n from stacks'),
-          templates: await safeCount('select count(*)::int as n from templates'),
-        }
-      : { containers: 0, running: 0, images: 0, volumes: 0, networks: 0, tunnels: 0, tunnelsActive: 0, stacks: 0, templates: 0 };
+    let counts: Counts;
+    if (!authed) {
+      counts = { ...ZERO_COUNTS };
+    } else if (isUnrestricted(req.scope)) {
+      counts = {
+        containers: docker.containers?.total ?? 0,
+        running: docker.containers?.running ?? 0,
+        images: docker.images ?? 0,
+        volumes: await safeLen(() => listVolumes()),
+        networks: await safeLen(() => listNetworks()),
+        tunnels: await safeCount('select count(*)::int as n from tunnels'),
+        tunnelsActive: await safeCount("select count(*)::int as n from tunnels where status = 'running'"),
+        stacks: await safeCount('select count(*)::int as n from stacks'),
+        templates: await safeCount('select count(*)::int as n from templates'),
+      };
+    } else {
+      counts = await scopedCounts(req.scope);
+      // The engine totals describe the whole host, so a scoped caller must not
+      // receive them either.
+      if (docker.containers !== undefined) {
+        dockerOut.containers = { total: counts.containers, running: counts.running };
+      }
+      if (docker.images !== undefined) dockerOut.images = counts.images;
+    }
 
     const info = {
       version: appVersion(),

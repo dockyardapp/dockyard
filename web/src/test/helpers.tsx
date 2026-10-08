@@ -18,12 +18,19 @@ export function renderWithProviders(ui: ReactElement, route = '/'): RenderResult
   );
 }
 
-export function makeUser(role: UserRole, email = `${role}@dockyard.local`): PublicUser {
+export function makeUser(
+  role: UserRole,
+  email = `${role}@dockyard.local`,
+  extra: Partial<PublicUser> = {},
+): PublicUser {
   return {
     id: `user-${role}`,
     email,
     role,
+    scope_mode: 'all',
+    can_exec: false,
     created_at: '2026-01-01T00:00:00.000Z',
     last_login_at: null,
+    ...extra,
   };
 }

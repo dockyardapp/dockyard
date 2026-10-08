@@ -66,7 +66,16 @@ vi.mock('../api/client', async (importOriginal) => {
       system: { health: vi.fn(), info: vi.fn() },
       audit: { list: vi.fn() },
       settings: { get: vi.fn(), patch: vi.fn() },
-      users: { list: vi.fn(), create: vi.fn(), update: vi.fn(), remove: vi.fn() },
+      users: {
+        list: vi.fn(),
+        create: vi.fn(),
+        update: vi.fn(),
+        remove: vi.fn(),
+        grants: vi.fn(),
+        addGrant: vi.fn(),
+        clearGrants: vi.fn(),
+        removeGrant: vi.fn(),
+      },
       cloudflare: { status: vi.fn(), setCredentials: vi.fn(), clearCredentials: vi.fn() },
     },
   };

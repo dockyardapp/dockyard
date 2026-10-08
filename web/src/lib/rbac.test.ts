@@ -62,3 +62,32 @@ describe('can', () => {
     }
   });
 });
+
+describe('can.exec', () => {
+  it('is not conferred by the operator role alone', () => {
+    // A shell in a container is root-equivalent when the Docker socket is
+    // mounted, so it needs the explicit capability flag.
+    expect(can.exec('operator', false)).toBe(false);
+    expect(can.exec('operator', null)).toBe(false);
+    expect(can.exec('operator', undefined)).toBe(false);
+  });
+
+  it('is granted to an operator who has the flag', () => {
+    expect(can.exec('operator', true)).toBe(true);
+  });
+
+  it('is always available to an admin', () => {
+    expect(can.exec('admin', false)).toBe(true);
+    expect(can.exec('admin', undefined)).toBe(true);
+  });
+
+  it('never applies to a viewer, even with the flag set', () => {
+    // The route still requires the operator role, so the flag alone is not enough.
+    expect(can.exec('viewer', true)).toBe(false);
+  });
+
+  it('is refused when signed out', () => {
+    expect(can.exec(null, true)).toBe(false);
+    expect(can.exec(undefined, true)).toBe(false);
+  });
+});

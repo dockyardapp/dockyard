@@ -28,6 +28,11 @@ export type Config = {
   cookieSecure: boolean;
   adminEmail: string;
   adminPassword: string;
+  /**
+   * Login attempts allowed per IP per minute. Deliberately low by default; the
+   * end-to-end suite raises it because it signs in many throwaway accounts.
+   */
+  loginRateMax: number;
 };
 
 const moduleDir = path.dirname(fileURLToPath(import.meta.url));
@@ -127,6 +132,12 @@ function resolveCookieSecure(env: Config['env']): boolean {
   return enabled;
 }
 
+/** Parse a positive integer from the environment, falling back when absent or junk. */
+function positiveInt(value: string | undefined, fallback: number): number {
+  const n = Number(value);
+  return Number.isFinite(n) && n > 0 ? Math.floor(n) : fallback;
+}
+
 function buildConfig(): Config {
   const envRaw = (process.env.NODE_ENV ?? '').trim();
   const env: Config['env'] =
@@ -157,6 +168,7 @@ function buildConfig(): Config {
     cookieSecure: resolveCookieSecure(env),
     adminEmail: (process.env.DOCKYARD_ADMIN_EMAIL ?? '').trim(),
     adminPassword: process.env.DOCKYARD_ADMIN_PASSWORD ?? '',
+    loginRateMax: positiveInt(process.env.DOCKYARD_LOGIN_RATE_MAX, 10),
   };
 }
 

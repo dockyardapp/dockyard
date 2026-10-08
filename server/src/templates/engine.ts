@@ -44,6 +44,12 @@ export type DeployInput = {
   name: string;
   values: Record<string, string>;
   userId: string | null;
+  /**
+   * Labels merged onto the created container on top of the template's own.
+   * Used to keep a scoped user's deployments inside their allocation, so the
+   * container they just created does not vanish from their view.
+   */
+  extraLabels?: Record<string, string>;
 };
 
 export type DeployResult = {
@@ -121,6 +127,9 @@ export async function deployTemplate(input: DeployInput): Promise<DeployResult> 
 
   const labels: Record<string, string> = {
     ...rendered.labels,
+    // Allocation labels sit above the template's own, but below the dockyard
+    // bookkeeping ones, which the stack join depends on.
+    ...(input.extraLabels ?? {}),
     'dockyard.stack': stack.id,
     'dockyard.name': stack.name,
   };

@@ -48,6 +48,13 @@ export default defineConfig({
     timeout: 90_000,
     // Spread process.env: the server needs PATH to resolve `node` and its own
     // .env for DATABASE_URL.
-    env: { ...(process.env as Record<string, string>), PORT: String(PORT) },
+    env: {
+      ...(process.env as Record<string, string>),
+      PORT: String(PORT),
+      // This suite signs in many throwaway accounts from one IP, which trips the
+      // login limiter (10/min by default, and that default is the right one for
+      // production). Raise it here rather than weakening the shipped value.
+      DOCKYARD_LOGIN_RATE_MAX: '500',
+    },
   },
 });

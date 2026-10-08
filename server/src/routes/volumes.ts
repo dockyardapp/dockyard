@@ -8,6 +8,7 @@ import type { FastifyInstance } from 'fastify';
 import { z } from 'zod';
 import { createVolume, listVolumes, removeVolume } from '../docker/index.ts';
 import { requireRole } from '../auth/rbac.ts';
+import { filterVisible, grantLabel } from '../auth/scope.ts';
 import { auditFromRequest } from '../auth/audit.ts';
 
 const createSchema = z.object({
@@ -23,13 +24,17 @@ function truthy(v: string | undefined): boolean {
 }
 
 export default async function volumesRoutes(app: FastifyInstance): Promise<void> {
-  app.get('/volumes', { preHandler: requireRole('viewer') }, async (_req, reply) => {
-    return reply.code(200).send(await listVolumes());
+  app.get('/volumes', { preHandler: requireRole('viewer') }, async (req, reply) => {
+    const volumes = await listVolumes();
+    return reply
+      .code(200)
+      .send(filterVisible(req.scope, 'volume', volumes, (v) => ({ name: v.name, labels: v.labels })));
   });
 
   app.post('/volumes', { preHandler: requireRole('operator') }, async (req, reply) => {
     const { name, labels } = createSchema.parse(req.body ?? {});
-    const volume = await createVolume(name, labels);
+    const inherited = grantLabel(req.scope, 'volume');
+    const volume = await createVolume(name, inherited ? { ...labels, ...inherited } : labels);
     await auditFromRequest(req, 'volume.create', 'volume', name, { name });
     return reply.code(200).send(volume);
   });

@@ -81,3 +81,21 @@ export async function deleteUser(
   const found = users.find((u) => u.email === email);
   if (found) await request.delete(`${baseURL}/api/users/${found.id}`);
 }
+
+/** Look up a user's id as the admin, so a test can address them directly. */
+export async function userIdFor(
+  request: APIRequestContext,
+  baseURL: string,
+  admin: { email: string; password: string },
+  email: string,
+): Promise<string> {
+  await request.post(`${baseURL}/api/auth/login`, {
+    data: { email: admin.email, password: admin.password },
+  });
+  const list = await request.get(`${baseURL}/api/users`);
+  if (!list.ok()) throw new Error(`could not list users: ${list.status()}`);
+  const users = (await list.json()) as Array<{ id: string; email: string }>;
+  const found = users.find((u) => u.email === email);
+  if (!found) throw new Error(`no user with email ${email}`);
+  return found.id;
+}

@@ -12,7 +12,7 @@
 //
 // `:id` accepts a full id, an id prefix or a container name (via resolveContainer).
 
-import type { FastifyInstance, FastifyReply } from 'fastify';
+import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
 import { z } from 'zod';
 import {
   containerLogs,
@@ -33,6 +33,7 @@ import {
 } from '../docker/index.ts';
 import type { ContainerSummary } from '../docker/index.ts';
 import { requireRole, sendError } from '../auth/rbac.ts';
+import { canExec, canSee, denyScoped, filterVisible, grantLabel } from '../auth/scope.ts';
 import { auditFromRequest } from '../auth/audit.ts';
 import { bus } from '../events.ts';
 
@@ -90,11 +91,29 @@ function truthy(v: string | undefined): boolean {
   return s === '1' || s === 'true' || s === 'yes' || s === 'on';
 }
 
-/** Resolve `:id` (id, id prefix or name) to a summary, or send a clean 404. */
-async function resolveOr404(id: string, reply: FastifyReply): Promise<ContainerSummary | null> {
+/** Scope target for a container summary. */
+function asTarget(c: ContainerSummary) {
+  return { id: c.id, name: c.name, labels: c.labels };
+}
+
+/**
+ * Resolve `:id` (id, id prefix or name) to a summary, or send a clean 404.
+ *
+ * A container outside the caller's allocation also 404s, worded identically to a
+ * genuine miss, so a scoped user cannot enumerate the host by probing ids.
+ */
+async function resolveOr404(
+  id: string,
+  req: FastifyRequest,
+  reply: FastifyReply,
+): Promise<ContainerSummary | null> {
   const summary = await resolveContainer(id);
   if (!summary) {
     sendError(reply, 404, 'not_found', `no container matches '${id}'`);
+    return null;
+  }
+  if (!canSee(req.scope, 'container', asTarget(summary))) {
+    denyScoped(reply, 'container', id);
     return null;
   }
   return summary;
@@ -104,15 +123,20 @@ export default async function containersRoutes(app: FastifyInstance): Promise<vo
   app.get('/containers', { preHandler: requireRole('viewer') }, async (req, reply) => {
     const { all, q } = listQuery.parse(req.query ?? {});
     const containers = await listContainers({ all: truthy(all), q });
-    return reply.code(200).send(containers);
+    return reply.code(200).send(filterVisible(req.scope, 'container', containers, asTarget));
   });
 
   app.post('/containers', { preHandler: requireRole('operator') }, async (req, reply) => {
-    const input = createSchema.parse(req.body ?? {});
+    const parsed = createSchema.parse(req.body ?? {});
+    // A scoped user's new container inherits their grant label, so it stays
+    // visible to them. Without this they would create one and lose sight of it.
+    const inherited = grantLabel(req.scope, 'container');
+    const input = inherited ? { ...parsed, labels: { ...parsed.labels, ...inherited } } : parsed;
     const created = await createContainer(input);
     await auditFromRequest(req, 'container.create', 'container', created.id, {
       name: created.name,
       image: input.image,
+      ...(inherited ? { allocatedBy: inherited } : {}),
     });
     bus.emit({ type: 'container', action: 'create', data: { id: created.id, name: created.name, image: input.image } });
     return reply.code(201).send({ id: created.id, name: created.name });
@@ -120,14 +144,14 @@ export default async function containersRoutes(app: FastifyInstance): Promise<vo
 
   app.get('/containers/:id', { preHandler: requireRole('viewer') }, async (req, reply) => {
     const { id } = req.params as { id: string };
-    const summary = await resolveOr404(id, reply);
+    const summary = await resolveOr404(id, req, reply);
     if (!summary) return;
     return reply.code(200).send(await getContainer(summary.id));
   });
 
   app.get('/containers/:id/inspect', { preHandler: requireRole('viewer') }, async (req, reply) => {
     const { id } = req.params as { id: string };
-    const summary = await resolveOr404(id, reply);
+    const summary = await resolveOr404(id, req, reply);
     if (!summary) return;
     return reply.code(200).send(await inspectContainer(summary.id));
   });
@@ -140,7 +164,7 @@ export default async function containersRoutes(app: FastifyInstance): Promise<vo
       });
     }
 
-    const summary = await resolveOr404(id, reply);
+    const summary = await resolveOr404(id, req, reply);
     if (!summary) return;
 
     switch (action as (typeof CONTAINER_ACTIONS)[number]) {
@@ -172,7 +196,7 @@ export default async function containersRoutes(app: FastifyInstance): Promise<vo
   app.delete('/containers/:id', { preHandler: requireRole('admin') }, async (req, reply) => {
     const { id } = req.params as { id: string };
     const { force, volumes } = deleteQuery.parse(req.query ?? {});
-    const summary = await resolveOr404(id, reply);
+    const summary = await resolveOr404(id, req, reply);
     if (!summary) return;
 
     const opts = { force: truthy(force), volumes: truthy(volumes) };
@@ -189,7 +213,7 @@ export default async function containersRoutes(app: FastifyInstance): Promise<vo
   app.get('/containers/:id/logs', { preHandler: requireRole('viewer') }, async (req, reply) => {
     const { id } = req.params as { id: string };
     const { tail, since, timestamps } = logsQuery.parse(req.query ?? {});
-    const summary = await resolveOr404(id, reply);
+    const summary = await resolveOr404(id, req, reply);
     if (!summary) return;
     const text = await containerLogs(summary.id, {
       tail: tail ?? 200,
@@ -201,15 +225,22 @@ export default async function containersRoutes(app: FastifyInstance): Promise<vo
 
   app.get('/containers/:id/stats', { preHandler: requireRole('viewer') }, async (req, reply) => {
     const { id } = req.params as { id: string };
-    const summary = await resolveOr404(id, reply);
+    const summary = await resolveOr404(id, req, reply);
     if (!summary) return;
     return reply.code(200).send(await containerStats(summary.id));
   });
 
+  // Exec is gated on `can_exec`, not on the operator role. The panel mounts the
+  // Docker socket, so a shell in any container is root on the host; that should
+  // be an explicit grant rather than a side effect of being able to restart
+  // things. Admins always may.
   app.post('/containers/:id/exec', { preHandler: requireRole('operator') }, async (req, reply) => {
     const { id } = req.params as { id: string };
+    if (!canExec(req.user)) {
+      return sendError(reply, 403, 'forbidden', 'exec is not enabled for this account');
+    }
     const { cmd } = execSchema.parse(req.body ?? {});
-    const summary = await resolveOr404(id, reply);
+    const summary = await resolveOr404(id, req, reply);
     if (!summary) return;
     const result = await execInContainer(summary.id, cmd);
     await auditFromRequest(req, 'container.exec', 'container', summary.id, { name: summary.name, cmd });

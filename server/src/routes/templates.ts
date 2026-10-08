@@ -11,6 +11,7 @@ import type { FastifyInstance, FastifyReply } from 'fastify';
 import { z } from 'zod';
 import { one, many, query } from '../db/pool.ts';
 import { requireRole, sendError } from '../auth/rbac.ts';
+import { canSee, denyScoped, filterVisible, grantLabel, isUnrestricted } from '../auth/scope.ts';
 import { auditFromRequest } from '../auth/audit.ts';
 import { validateSpec, TemplateValidationError } from '../templates/schema.ts';
 import type { TemplateSpec } from '../templates/schema.ts';
@@ -101,7 +102,7 @@ export default async function templatesRoutes(app: FastifyInstance): Promise<voi
         order by category asc, name asc`,
       [category ?? null, source ?? null],
     );
-    return reply.code(200).send(rows.map(toWire));
+    return reply.code(200).send(filterVisible(req.scope, 'template', rows.map(toWire), (t) => ({ id: t.id, slug: t.slug })));
   });
 
   app.get('/templates/:slug', { preHandler: requireRole('viewer') }, async (req, reply) => {
@@ -109,6 +110,9 @@ export default async function templatesRoutes(app: FastifyInstance): Promise<voi
     const { slug } = req.params as { slug: string };
     const row = await one<TemplateRow>('select * from templates where slug = $1', [slug]);
     if (!row) return sendError(reply, 404, 'not_found', `template not found: ${slug}`);
+    if (!canSee(req.scope, 'template', { id: String(row.id), slug: row.slug })) {
+      return denyScoped(reply, 'template', slug);
+    }
     return reply.code(200).send(toWire(row));
   });
 
@@ -134,6 +138,16 @@ export default async function templatesRoutes(app: FastifyInstance): Promise<voi
       [spec.slug, spec.name, spec.category, spec.icon, spec.description, JSON.stringify(spec)],
     );
     if (!row) return sendError(reply, 500, 'internal', 'failed to create template');
+    // A scoped user who authors a template gets it allocated to them, otherwise
+    // they would create one and immediately be unable to see or deploy it.
+    if (!isUnrestricted(req.scope) && req.user) {
+      await query(
+        `insert into user_grants (user_id, resource_kind, resource_id, created_by)
+         values ($1, 'template', $2, $1)
+         on conflict do nothing`,
+        [req.user.id, spec.slug],
+      );
+    }
     await auditFromRequest(req, 'template.create', 'template', row.slug, { name: row.name });
     return reply.code(201).send(toWire(row));
   });
@@ -179,12 +193,17 @@ export default async function templatesRoutes(app: FastifyInstance): Promise<voi
     const body = deployBody.parse(req.body ?? {});
     const values = coerceValues(body.values);
 
+    // Deploying is an allocation question as well as a permission one: a scoped
+    // user may only deploy templates the admin granted them.
+    if (!canSee(req.scope, 'template', { slug })) return denyScoped(reply, 'template', slug);
+
     try {
       const result = await deployTemplate({
         slug,
         name: body.name,
         values,
         userId: req.user?.id ?? null,
+        extraLabels: grantLabel(req.scope, 'container') ?? undefined,
       });
       await auditFromRequest(req, 'template.deploy', 'stack', result.stack.id, {
         slug,
