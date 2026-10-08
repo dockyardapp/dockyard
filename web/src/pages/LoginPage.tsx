@@ -6,6 +6,7 @@ import { usePolling } from '../hooks/usePolling';
 import { BrandMark, Icon } from '../components/Icons';
 import { Banner, Button, TextField } from '../components/ui';
 import { formatDuration } from '../lib/format';
+import { MIN_PASSWORD_LENGTH, PASSWORD_HINT, PASSWORD_TOO_SHORT } from '../lib/password';
 import type { SystemInfo } from '../api/types';
 
 type Mode = 'login' | 'bootstrap';
@@ -33,6 +34,10 @@ export function LoginPage() {
   const submit = async (e: React.FormEvent) => {
     e.preventDefault();
     setError(null);
+    if (mode === 'bootstrap' && password.length < MIN_PASSWORD_LENGTH) {
+      setError(PASSWORD_TOO_SHORT);
+      return;
+    }
     setBusy(true);
     try {
       if (mode === 'bootstrap') await bootstrap(email.trim(), password);
@@ -83,7 +88,7 @@ export function LoginPage() {
               autoComplete={mode === 'bootstrap' ? 'new-password' : 'current-password'}
               required
               disabled={busy}
-              hint={mode === 'bootstrap' ? 'At least 8 characters.' : undefined}
+              hint={mode === 'bootstrap' ? PASSWORD_HINT : undefined}
             />
             <Button type="submit" variant="primary" size="lg" block busy={busy}>
               {mode === 'bootstrap' ? 'Create account' : 'Sign in'}

@@ -19,6 +19,7 @@ import {
   useConfirm,
 } from '../components/ui';
 import { formatDateTime } from '../lib/format';
+import { MIN_PASSWORD_LENGTH, PASSWORD_HINT } from '../lib/password';
 
 const ROLES: UserRole[] = ['admin', 'operator', 'viewer'];
 
@@ -350,7 +351,7 @@ export function SettingsPage() {
         footer={
           <>
             <Button onClick={() => setResetUser(null)}>Cancel</Button>
-            <Button variant="primary" busy={resetUser ? pending[`${resetUser.id}:pw`] : false} disabled={resetPassword.length < 8} onClick={() => void submitReset()}>
+            <Button variant="primary" busy={resetUser ? pending[`${resetUser.id}:pw`] : false} disabled={resetPassword.length < MIN_PASSWORD_LENGTH} onClick={() => void submitReset()}>
               Set password
             </Button>
           </>
@@ -361,7 +362,7 @@ export function SettingsPage() {
           type="password"
           value={resetPassword}
           onChange={(e) => setResetPassword(e.target.value)}
-          hint="At least 8 characters."
+          hint={PASSWORD_HINT}
           autoComplete="new-password"
         />
       </Dialog>
@@ -380,7 +381,7 @@ function NewUserCard({
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  const valid = email.includes('@') && password.length >= 8;
+  const valid = email.includes('@') && password.length >= MIN_PASSWORD_LENGTH;
 
   return (
     <Card title="Add a user">
@@ -393,7 +394,7 @@ function NewUserCard({
           value={password}
           onChange={(e) => setPassword(e.target.value)}
           disabled={busy}
-          hint="At least 8 characters."
+          hint={PASSWORD_HINT}
           autoComplete="new-password"
         />
         <Field label="Role">

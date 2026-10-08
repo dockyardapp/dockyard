@@ -10,7 +10,7 @@ import { z } from 'zod';
 import { one, query } from '../db/pool.ts';
 import { config } from '../config.ts';
 import { logger } from '../logger.ts';
-import { dummyVerify, hashPassword, verifyPassword } from '../auth/password.ts';
+import { dummyVerify, hashPassword, MIN_PASSWORD_LENGTH, verifyPassword } from '../auth/password.ts';
 import { publicUser, sendError } from '../auth/rbac.ts';
 import {
   SESSION_COOKIE,
@@ -27,12 +27,24 @@ const credentials = z.object({
   password: z.string().min(1).max(1000),
 });
 
+/**
+ * Setting a password, as opposed to presenting one.
+ *
+ * Login keeps the permissive rule above on purpose: an account whose password
+ * predates the minimum must still be able to sign in. Creating or changing a
+ * password enforces the length the UI advertises.
+ */
+const newCredentials = z.object({
+  email: z.string().trim().email().max(320),
+  password: z.string().min(MIN_PASSWORD_LENGTH).max(1000),
+});
+
 const USER_COLUMNS = 'id, email, role, scope_mode, can_exec, created_at, last_login_at';
 
 export default async function authRoutes(app: FastifyInstance): Promise<void> {
   // First-run admin creation. 409 as soon as any user exists.
   app.post('/auth/bootstrap', async (req, reply) => {
-    const { email, password } = credentials.parse(req.body ?? {});
+    const { email, password } = newCredentials.parse(req.body ?? {});
     const count = await one<{ n: number }>('select count(*)::int as n from users');
     if ((count?.n ?? 0) > 0) {
       return sendError(reply, 409, 'conflict', 'bootstrap is only available while no users exist');

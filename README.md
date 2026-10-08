@@ -94,6 +94,13 @@ user is created from `DOCKYARD_ADMIN_EMAIL` / `DOCKYARD_ADMIN_PASSWORD` on first
 `POST /api/auth/bootstrap` while the users table is empty. Every mutating call lands in
 `audit_log`.
 
+A new password must be at least 8 characters. That minimum is enforced by the API, not just by the
+forms: `POST /api/auth/bootstrap`, `POST /api/users` and `PATCH /api/users/:id` all reject a shorter
+one with `validation_error`. Sign-in deliberately does not apply it, so an account whose password
+predates the rule can still get in and change it. The number lives in
+`server/src/auth/password.ts`; `web/src/lib/password.ts` mirrors it for the forms, and
+`server/test/password-rules.test.ts` fails if the two drift.
+
 ### Resource allocation
 
 The role ladder decides what a user may **do**. It does not decide what they may **see** — by

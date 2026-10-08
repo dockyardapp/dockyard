@@ -20,7 +20,7 @@
 import type { FastifyInstance } from 'fastify';
 import { z } from 'zod';
 import { many, one, query } from '../db/pool.ts';
-import { hashPassword } from '../auth/password.ts';
+import { hashPassword, MIN_PASSWORD_LENGTH } from '../auth/password.ts';
 import { publicUser, requireRole, sendError } from '../auth/rbac.ts';
 import { RESOURCE_KINDS } from '../auth/scope.ts';
 import type { Grant } from '../auth/scope.ts';
@@ -33,7 +33,7 @@ const scopeModes = z.enum(['all', 'granted']);
 
 const createUserSchema = z.object({
   email: z.string().trim().email().max(320),
-  password: z.string().min(1).max(1000),
+  password: z.string().min(MIN_PASSWORD_LENGTH).max(1000),
   role: roles,
   scope_mode: scopeModes.optional(),
   can_exec: z.boolean().optional(),
@@ -42,7 +42,7 @@ const createUserSchema = z.object({
 const patchUserSchema = z
   .object({
     role: roles.optional(),
-    password: z.string().min(1).max(1000).optional(),
+    password: z.string().min(MIN_PASSWORD_LENGTH).max(1000).optional(),
     scope_mode: scopeModes.optional(),
     can_exec: z.boolean().optional(),
   })

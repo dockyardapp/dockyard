@@ -18,7 +18,7 @@
     "build:web": "npm --workspace web run build",
     "typecheck": "npm --workspace web run typecheck && node --experimental-strip-types --check server/src/index.ts",
     "migrate": "node server/src/db/migrate.ts",
-    "test": "node --test server/test/*.test.ts",
+    "test": "DOCKYARD_LOGIN_RATE_MAX=1000 node --test server/test/*.test.ts",
     "test:live": "DOCKYARD_LIVE_TUNNEL_TESTS=1 node --test server/test/tunnels.test.ts"
   }
 }

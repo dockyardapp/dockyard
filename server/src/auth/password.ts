@@ -9,6 +9,13 @@
 
 import crypto from 'node:crypto';
 
+/**
+ * Minimum length for a new password. The sign-in and reset forms state the same
+ * rule, but this is the one that is enforced: a client-side check is a courtesy,
+ * not a control, and the API is reachable directly.
+ */
+export const MIN_PASSWORD_LENGTH = 8;
+
 const N = 16384; // CPU/memory cost (2^14)
 const R = 8; // block size
 const P = 1; // parallelisation

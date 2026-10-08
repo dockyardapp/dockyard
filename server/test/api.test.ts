@@ -6,7 +6,11 @@
 // round-trip through the routes. Everything it creates is removed at the end.
 //
 //   export PATH=/root/.hermes/node/bin:$PATH
-//   node --test server/test/api.test.ts
+//   DOCKYARD_LOGIN_RATE_MAX=1000 node --test server/test/api.test.ts
+//
+// The rate limit is raised because this suite signs in a dozen times from one
+// address in a couple of seconds, which is exactly what the production limit of
+// ten per minute is meant to stop. `npm test` sets it too.
 
 import { after, before, describe, it } from 'node:test';
 import assert from 'node:assert/strict';
@@ -91,6 +95,42 @@ describe('auth: bootstrap / login / logout / me', () => {
     });
     assert.equal(res.statusCode, 409);
     assert.equal(res.json().error.code, 'conflict');
+  });
+
+  it('bootstrap refuses a password shorter than the advertised minimum', async () => {
+    // The sign-in form says "at least 8 characters", so the API has to be the one
+    // that enforces it: it is reachable directly, and this endpoint creates an
+    // administrator. Validation runs before the "users already exist" check, so
+    // the length rule is what answers here.
+    const res = await app.inject({
+      method: 'POST',
+      url: '/api/auth/bootstrap',
+      payload: { email: 'whoever@dockyard.test', password: 'short' },
+    });
+    assert.equal(res.statusCode, 400);
+    assert.equal(res.json().error.code, 'validation_error');
+  });
+
+  it('creating a user refuses a short password, but login still accepts one', async () => {
+    const adminCookie = await loginAs('admin');
+
+    const created = await app.inject({
+      method: 'POST',
+      url: '/api/users',
+      headers: cookieHeader(adminCookie),
+      payload: { email: 'shorty@dockyard.test', password: 'tiny', role: 'viewer' },
+    });
+    assert.equal(created.statusCode, 400);
+    assert.equal(created.json().error.code, 'validation_error');
+
+    // Login must not apply the same rule, or an account whose password predates
+    // the minimum could never sign in to change it.
+    const login = await app.inject({
+      method: 'POST',
+      url: '/api/auth/login',
+      payload: { email: emailFor('admin'), password: 'x' },
+    });
+    assert.equal(login.statusCode, 401, 'a short wrong password is a 401, not a 400');
   });
 
   it('login sets a session cookie and /me returns the user', async () => {
