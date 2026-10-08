@@ -1,0 +1,27 @@
+# Dependencies
+node_modules/
+
+# Build output
+dist/
+*.tsbuildinfo
+
+# Local data (postgres volume, tunnel credentials)
+data/
+
+# Secrets. `**/` so a nested server/.env is caught too, not just the top level.
+**/.env
+**/.env.*
+!**/.env.example
+
+# Logs
+*.log
+
+# Test and coverage artifacts
+coverage/
+test-results/
+playwright-report/
+.vite/
+
+# OS noise
+.DS_Store
+Thumbs.db

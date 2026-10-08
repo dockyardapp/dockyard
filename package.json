@@ -1,0 +1,24 @@
+{
+  "name": "dockyard",
+  "private": true,
+  "version": "0.1.0",
+  "description": "Dockyard - a simple Docker container control panel with templates and built-in Cloudflare tunnels",
+  "type": "module",
+  "workspaces": [
+    "server",
+    "web"
+  ],
+  "engines": {
+    "node": ">=22"
+  },
+  "scripts": {
+    "dev:server": "node --watch server/src/index.ts",
+    "start": "node server/src/index.ts",
+    "dev:web": "npm --workspace web run dev",
+    "build:web": "npm --workspace web run build",
+    "typecheck": "npm --workspace web run typecheck && node --experimental-strip-types --check server/src/index.ts",
+    "migrate": "node server/src/db/migrate.ts",
+    "test": "node --test server/test/*.test.ts",
+    "test:live": "DOCKYARD_LIVE_TUNNEL_TESTS=1 node --test server/test/tunnels.test.ts"
+  }
+}

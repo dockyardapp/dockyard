@@ -1,0 +1,140 @@
+/*
+ * Dockyard design tokens
+ * ---------------------------------------------------------------------------
+ * Source: "Linear" design system, from the `popular-web-designs` skill
+ * (templates/linear.app.md). Every neutral, accent, border and elevation value
+ * below is taken verbatim from that system. Nothing here is improvised.
+ *
+ * The only additions are the semantic *state* colours (running / paused /
+ * error / restarting) that a Docker console needs and Linear's palette does
+ * not ship. They are marked EXTENSION and were contrast-checked by hand
+ * (see web/DESIGN.md) because they sit behind translucent tints.
+ *
+ * Fonts: Linear uses Inter Variable + Berkeley Mono. Neither is guaranteed
+ * offline, so the stacks fall back to system-ui / ui-monospace. main.tsx also
+ * injects the Inter + JetBrains Mono webfonts (Linear's documented CDN
+ * substitutes) when the network allows; the stacks degrade cleanly without it.
+ */
+
+:root {
+  color-scheme: dark;
+
+  /* --- Surfaces (Linear: background luminance stepping) ------------------ */
+  --bg-canvas: #08090a;        /* Marketing Black  - app canvas          */
+  --bg-panel: #0f1011;         /* Panel Dark       - sidebar / panels    */
+  --bg-surface: #191a1b;       /* Level 3 Surface  - cards, dropdowns    */
+  --bg-raised: #28282c;        /* Secondary Surface- hover / raised      */
+  --bg-input: rgba(255, 255, 255, 0.02);
+  --bg-card: rgba(255, 255, 255, 0.02);
+  --bg-card-hover: rgba(255, 255, 255, 0.04);
+
+  /* --- Text (Linear: Primary / Secondary / Tertiary / Quaternary) -------- */
+  --text-primary: #f7f8f8;
+  --text-secondary: #d0d6e0;
+  --text-tertiary: #8a8f98;
+  --text-quaternary: #787c84;
+  --text-on-accent: #ffffff;
+
+  /* --- Brand & accent (Linear: the only chromatic family) ---------------- */
+  --accent: #5e6ad2;           /* Brand Indigo  - CTA backgrounds        */
+  --accent-press: #4f5ac2;     /* Primary-button hover. Linear's documented hover
+                                  (#828fff) puts white text at 2.87:1, below WCAG
+                                  AA, so the press state darkens in the same indigo
+                                  family and holds 5.88:1. */
+  --accent-violet: #7170ff;    /* Accent Violet - links, active states   */
+  --accent-hover: #828fff;     /* Accent Hover  - hover on accent        */
+  --accent-lavender: #7a7fad;  /* Security Lavender                      */
+  --accent-soft: rgba(113, 112, 255, 0.14);
+  --accent-soft-strong: rgba(113, 112, 255, 0.22);
+
+  /* --- Borders (Linear: whisper-thin semi-transparent white) ------------- */
+  --border-subtle: rgba(255, 255, 255, 0.05);
+  --border-standard: rgba(255, 255, 255, 0.08);
+  --border-solid: #23252a;     /* Border Primary   */
+  --border-strong: #34343a;    /* Border Secondary */
+  --border-tertiary: #3e3e44;  /* Border Tertiary  */
+
+  /* --- Status: success (Linear) ----------------------------------------- */
+  --success: #27a644;
+  --success-emerald: #10b981;
+
+  /* --- Status: EXTENSION (not in Linear; semantic state for containers) -- */
+  --state-running-fg: #34d399;
+  --state-running-bg: #183029;
+  --state-running-border: rgba(52, 211, 153, 0.28);
+
+  --state-paused-fg: #f0b232;
+  --state-paused-bg: #372f1e;
+  --state-paused-border: rgba(240, 178, 50, 0.28);
+
+  --state-error-fg: #f87171;
+  --state-error-bg: #372224;
+  --state-error-border: rgba(248, 113, 113, 0.28);
+
+  --state-restarting-fg: #a5b4fc;
+  --state-restarting-bg: #242738;
+  --state-restarting-border: rgba(165, 180, 252, 0.28);
+
+  --state-neutral-fg: #8a8f98;
+  --state-neutral-bg: #202124;
+  --state-neutral-border: rgba(255, 255, 255, 0.08);
+
+  --state-info-fg: #7cc4ff;
+  --state-info-bg: #16232e;
+  --state-info-border: rgba(124, 196, 255, 0.28);
+
+  /* --- Type (Linear: Inter Variable, mono Berkeley Mono) ----------------- */
+  --font-sans: 'Inter', 'Inter Variable', system-ui, -apple-system, 'Segoe UI',
+    Roboto, 'Helvetica Neue', Arial, sans-serif;
+  --font-mono: 'JetBrains Mono', ui-monospace, 'SF Mono', SFMono-Regular,
+    Menlo, Consolas, 'Liberation Mono', monospace;
+  --font-features: 'cv01', 'ss03';
+
+  --fs-display: 32px;   /* Heading 1  weight 400, -0.704px */
+  --fs-h2: 24px;        /* Heading 2  weight 400, -0.288px */
+  --fs-h3: 20px;        /* Heading 3  weight 590, -0.24px  */
+  --fs-lg: 18px;
+  --fs-body: 15px;      /* Small      weight 400/510/590    */
+  --fs-sm: 14px;        /* Caption Large                   */
+  --fs-xs: 13px;        /* Caption                         */
+  --fs-label: 12px;     /* Label                           */
+  --fs-micro: 11px;     /* Micro                           */
+
+  --fw-read: 400;
+  --fw-ui: 510;         /* Linear signature weight         */
+  --fw-strong: 590;     /* Linear max emphasis weight      */
+
+  /* --- Radius (Linear scale) -------------------------------------------- */
+  --radius-micro: 2px;
+  --radius-sm: 4px;
+  --radius-md: 6px;
+  --radius-lg: 8px;
+  --radius-panel: 12px;
+  --radius-pill: 9999px;
+
+  /* --- Spacing (8px base, Linear's optical micro-steps included) -------- */
+  --space-1: 4px;
+  --space-2: 8px;
+  --space-3: 12px;
+  --space-4: 16px;
+  --space-5: 20px;
+  --space-6: 24px;
+  --space-8: 32px;
+  --space-10: 40px;
+
+  /* --- Elevation (Linear: luminance stepping + shadow stacks) ----------- */
+  --shadow-subtle: rgba(0, 0, 0, 0.03) 0px 1.2px 0px 0px;
+  --shadow-elevated: rgba(0, 0, 0, 0.4) 0px 2px 4px;
+  --shadow-dialog: rgba(0, 0, 0, 0.08) 0px 0px 1px, rgba(0, 0, 0, 0.07) 0px 1px 1px,
+    rgba(0, 0, 0, 0.04) 0px 3px 2px, rgba(0, 0, 0, 0.01) 0px 5px 2px;
+  --shadow-inset: rgba(0, 0, 0, 0.2) 0px 0px 12px 0px inset;
+  --overlay: rgba(0, 0, 0, 0.85);
+
+  /* --- Focus ring (Linear multi-layer focus) ---------------------------- */
+  --focus-ring: 0 0 0 2px var(--bg-canvas), 0 0 0 4px var(--accent-violet);
+
+  /* --- Layout ----------------------------------------------------------- */
+  --sidebar-w: 224px;
+  --topbar-h: 52px;
+  --content-max: 1320px;
+}

@@ -1,0 +1,110 @@
+# Deploying Dockyard
+
+The app is a single Node process that serves both the API and the built
+frontend (`web/dist`), so the deployment is: build the frontend, run the server,
+put nginx in front of it for TLS.
+
+TLS is not optional here. The panel mounts the Docker socket, which is
+root-equivalent control of the host, and in production the server refuses to
+start unless it is told it is behind HTTPS.
+
+## 1. Build and configure
+
+```sh
+npm install
+npm --workspace web run build          # writes web/dist, which the server serves
+npm run migrate                        # forward-only migrations
+```
+
+In `.env`, for a real host:
+
+- `NODE_ENV=production`
+- `COOKIE_SECURE=true` — the server **refuses to boot** with `NODE_ENV=production`
+  and an insecure cookie, because that would put the session cookie on the wire
+  in plaintext. Unset means "secure in production", so the failure mode is a
+  refusal to start rather than a silent downgrade.
+- `PUBLIC_URL=https://<host>` — used for the Cloudflare tunnel target and links.
+- `SECRET_KEY` — 64 hex chars, `openssl rand -hex 24`.
+- `DATABASE_URL`, `DOCKYARD_ADMIN_EMAIL`, `DOCKYARD_ADMIN_PASSWORD`.
+
+## 2. Reverse proxy and TLS
+
+Copy `deploy/nginx.conf.example` to `/etc/nginx/sites-available/dockyard`, set
+`server_name` and the certificate paths, symlink it into `sites-enabled`, then:
+
+```sh
+nginx -t && systemctl reload nginx
+```
+
+The shipped config is the TLS-terminating one: an HTTPS server block with the
+locations, plus a port-80 block that redirects everything to HTTPS **except**
+`/.well-known/acme-challenge/`. That exception is what keeps certificate renewal
+working; redirecting it too is a common way to break certbot a month later.
+
+To get the certificate:
+
+```sh
+certbot --nginx -d <host> --non-interactive --agree-tos --redirect
+```
+
+Two things to check before enabling HSTS. The config ships with it enabled, so
+if you are unsure, comment the `Strict-Transport-Security` line out for the first
+deploy: HSTS makes browsers refuse the plain-HTTP fallback, so a broken
+certificate becomes unrecoverable without clearing browser state.
+
+If you manage the certificate yourself rather than with certbot, note that
+`ssl_certificate_key` must be readable by the nginx **worker** user (usually
+`www-data`), not just by root. A key left at mode 600 root-only gives
+`permission denied` at reload time.
+
+If TLS terminates somewhere else (a load balancer, Cloudflare), use the variant
+at the bottom of the config and set `COOKIE_SECURE=true` anyway. The browser is
+what decides whether to send the cookie, and it only ever sees HTTPS.
+
+The `/ws/` location matters: nginx's default 60-second read timeout drops an
+idle event stream or log tail every minute, which shows up in the console as the
+socket reconnecting on a timer.
+
+## 3. Verify from outside
+
+```sh
+curl -sI https://<host>/                       # 200, and the security headers
+curl -s  https://<host>/api/system/health      # {"ok":true,...}
+curl -sI https://<host>/assets/<hashed>.js     # 200, immutable cache
+curl -sI http://<host>/containers              # 301 to the https origin
+```
+
+Check the cookie is marked secure by signing in and inspecting the
+`Set-Cookie` header: it must carry `Secure` and `HttpOnly`.
+
+## What was verified
+
+The config in this directory was run for real against a production-mode instance
+(`NODE_ENV=production COOKIE_SECURE=true`) with a locally issued certificate, on
+alternate ports. 19 of 19 server-side probes and 11 of 11 in a real browser:
+
+- the chain verifies against the trust store with no `-k`, hostname included
+- TLS 1.3 negotiated; TLS 1.0 and 1.1 refused
+- plain HTTP returns `301` to the https origin
+- `/.well-known/acme-challenge/` is served, not redirected
+- HSTS and the four security headers present on the response
+- the session cookie carries `Secure` and `HttpOnly`
+- an authenticated call with that cookie returns `200`
+- the events socket upgrades to `101` over TLS
+- in Chrome: the certificate validates (TLS 1.3, correct SANs), the app renders
+  with no interstitial, the socket connects over `wss`, and `document.cookie` is
+  empty because the session cookie is httpOnly
+- with `COOKIE_SECURE=false` under `NODE_ENV=production`, the process exits `1`
+  and names the plaintext-cookie risk
+
+## Known limits
+
+- One process, one database. Nothing here assumes more than one replica.
+- Migrations run on boot, which is correct for one instance and wrong for
+  several: concurrent boots can collide. Move `npm run migrate` into the deploy
+  step once there is more than one replica.
+- The container healthcheck and `systemd` unit are not included in this repo.
+- The frontend's list views cap rendering at 250 rows per table
+  (`useRowCap`); the audit log paginates instead.
+- The live quick-tunnel test is opt-in (`npm run test:live`) because it needs a
+  public hostname routed back to the machine, which CI usually cannot provide.

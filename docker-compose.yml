@@ -1,0 +1,60 @@
+# Dockyard runs the Docker socket through the panel. Anyone with panel access has
+# root-equivalent control of the host, so treat it accordingly.
+#
+# Copy .env.example to .env next to this file, or export these in the shell:
+#   POSTGRES_PASSWORD   - required, no default is shipped
+#   SECRET_KEY          - required, 64 hex chars: node -e "console.log(require('crypto').randomBytes(32).toString('hex'))"
+#   DOCKYARD_ADMIN_PASSWORD - optional first-boot admin password
+#   PUBLIC_URL, CLOUDFLARE_API_TOKEN, CLOUDFLARE_ACCOUNT_ID - optional
+
+services:
+  db:
+    image: postgres:17-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: dockyard
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD (no default is shipped)}
+      POSTGRES_DB: dockyard
+    volumes:
+      - dockyard-pg:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U dockyard -d dockyard"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+
+  panel:
+    build:
+      context: .
+    restart: unless-stopped
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      PORT: 8190
+      HOST: 0.0.0.0
+      PUBLIC_URL: ${PUBLIC_URL:-http://localhost:8190}
+      DATABASE_URL: postgres://dockyard:${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD}@db:5432/dockyard
+      SECRET_KEY: ${SECRET_KEY:?set SECRET_KEY (64 hex chars)}
+      # The panel is itself a container, so a tunnel targeting another container's
+      # published port must reach it through the host gateway, not 127.0.0.1.
+      TUNNEL_TARGET_HOST: host.docker.internal
+      TUNNEL_DATA_DIR: /app/data/tunnels
+      CLOUDFLARED_BIN: /usr/local/bin/cloudflared
+      CLOUDFLARE_API_TOKEN: ${CLOUDFLARE_API_TOKEN:-}
+      CLOUDFLARE_ACCOUNT_ID: ${CLOUDFLARE_ACCOUNT_ID:-}
+      DOCKYARD_ADMIN_EMAIL: ${DOCKYARD_ADMIN_EMAIL:-admin@dockyard.local}
+      DOCKYARD_ADMIN_PASSWORD: ${DOCKYARD_ADMIN_PASSWORD:-}
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    ports:
+      - "${PANEL_PORT:-8190}:8190"
+    volumes:
+      # Docker control plane. The panel user needs read/write on this socket.
+      - /var/run/docker.sock:/var/run/docker.sock
+      # Named-tunnel credentials and cloudflared configs.
+      - dockyard-data:/app/data
+
+volumes:
+  dockyard-pg:
+  dockyard-data:
