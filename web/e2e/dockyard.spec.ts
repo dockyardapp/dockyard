@@ -263,3 +263,27 @@ test('container exec is off by default and an admin can turn it on', async ({
     await deleteUser(request, baseURL!, admin, email);
   }
 });
+
+test('the create-tunnel dialog offers localtunnel, which needs no Cloudflare account', async ({
+  page,
+}) => {
+  await login(page, admin.email, admin.password);
+  await page.goto('/tunnels');
+  await page.getByRole('button', { name: 'Create tunnel' }).click();
+
+  const dialog = page.getByRole('dialog');
+  const chip = dialog.getByRole('button', { name: 'localtunnel' });
+  await expect(chip).toBeVisible();
+
+  await chip.click();
+  await expect(chip).toHaveAttribute('aria-pressed', 'true');
+  await expect(dialog.getByText(/assigned by localtunnel\.me/i)).toBeVisible();
+
+  // LocalTunnel needs a name and a target and nothing else: no hostname, no zone and
+  // no Cloudflare credentials, so the submit button goes live as soon as both are set.
+  await dialog.getByLabel('Name').fill('e2e-localtunnel');
+  await dialog.getByRole('button', { name: 'raw URL' }).click();
+  await dialog.getByLabel('Target URL').fill('http://127.0.0.1:8080');
+
+  await expect(dialog.getByRole('button', { name: 'Create tunnel' })).toBeEnabled();
+});

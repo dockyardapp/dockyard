@@ -186,7 +186,7 @@ export type StackWithContainers = StackRow & { containers: ContainerSummary[] };
 
 /* ---------------------------------------------------------------- §6 tunnels */
 
-export type TunnelMode = 'quick' | 'named';
+export type TunnelMode = 'quick' | 'named' | 'localtunnel';
 export type TunnelStatus = 'stopped' | 'starting' | 'running' | 'error';
 
 export type Tunnel = {

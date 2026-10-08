@@ -30,11 +30,21 @@ import {
   writeTunnelFiles,
 } from './named.ts';
 import { startQuickTunnel } from './quick.ts';
+import { startLocalTunnel } from './localtunnel.ts';
 import { spawnCloudflared } from './supervisor.ts';
 import type { SpawnedTunnel } from './supervisor.ts';
 
-export type TunnelMode = 'quick' | 'named';
+export type TunnelMode = 'quick' | 'named' | 'localtunnel';
 export type TunnelStatus = 'stopped' | 'starting' | 'running' | 'error';
+
+/** Every exposure mode the API accepts. Kept in one place so the route, the
+ *  manager and the tests cannot drift apart on what is allowed. */
+export const TUNNEL_MODES: readonly TunnelMode[] = ['quick', 'named', 'localtunnel'];
+
+/** The provider a mode runs on, for messages and for the UI. */
+export function providerOf(mode: TunnelMode): string {
+  return mode === 'localtunnel' ? 'localtunnel' : 'cloudflared';
+}
 
 export type Tunnel = {
   id: string;
@@ -355,6 +365,7 @@ function registerLive(
   process: SpawnedTunnel,
   url: string | null,
   status: TunnelStatus,
+  mode: TunnelMode,
 ): LiveEntry {
   const entry: LiveEntry = { process, url, status, error: null, stopping: false };
   live.set(id, entry);
@@ -364,10 +375,15 @@ function registerLive(
     if (current !== entry) return; // superseded by a newer process
     if (entry.stopping) return; // stop()/shutdown() owns this transition
     live.delete(id);
-    const message = `cloudflared exited unexpectedly (code=${code ?? 'null'}${
+    const message = `${providerOf(mode)} exited unexpectedly (code=${code ?? 'null'}${
       signal ? `, signal=${signal}` : ''
     })`;
-    logger.warn('tunnel process exited unexpectedly', { tunnelId: id, code, signal });
+    logger.warn('tunnel provider exited unexpectedly', {
+      tunnelId: id,
+      mode,
+      code,
+      signal,
+    });
     void updateRow(id, { status: 'error', last_error: message, pid: null, url: null })
       .then(() => emitById('error', id))
       .catch((err) =>
@@ -400,10 +416,11 @@ async function get(id: string): Promise<Tunnel | null> {
 
 async function create(input: CreateTunnelInput): Promise<Tunnel> {
   const mode = input.mode;
-  if (mode !== 'quick' && mode !== 'named') {
-    throw new TunnelError("mode must be 'quick' or 'named'", 400, 'validation_error');
+  if (!TUNNEL_MODES.includes(mode)) {
+    throw new TunnelError(`mode must be one of ${TUNNEL_MODES.join(', ')}`, 400, 'validation_error');
   }
-  const name = (input.name ?? '').trim() || (mode === 'quick' ? 'quick tunnel' : 'tunnel');
+  const name =
+    (input.name ?? '').trim() || (mode === 'quick' ? 'quick tunnel' : mode === 'localtunnel' ? 'localtunnel' : 'tunnel');
 
   let targetUrl = (input.target_url ?? '').trim();
   let containerId = (input.container_id ?? '').trim() || null;
@@ -463,10 +480,17 @@ async function start(id: string): Promise<Tunnel> {
 
   let spawned: SpawnedTunnel | null = null;
   try {
-    if (row.mode === 'quick') {
+    if (row.mode === 'localtunnel') {
+      // The tunnel name doubles as the requested subdomain, so a restart has a
+      // chance of landing on the same URL. A refusal falls back to an assigned one.
+      const { process, url } = await startLocalTunnel(row.target_url, { subdomain: row.name });
+      spawned = process;
+      registerLive(id, process, url, 'running', row.mode);
+      await updateRow(id, { status: 'running', url, pid: null, last_error: null });
+    } else if (row.mode === 'quick') {
       const { process, url } = await startQuickTunnel(row.target_url);
       spawned = process;
-      registerLive(id, process, url, 'running');
+      registerLive(id, process, url, 'running', row.mode);
       await updateRow(id, { status: 'running', url, pid: process.pid ?? null, last_error: null });
     } else {
       const provisioned = await provisionNamed(row);
@@ -476,7 +500,7 @@ async function start(id: string): Promise<Tunnel> {
           logger.debug('cloudflared', { tunnelId: id, stream, line }),
       });
       const publicUrl = `https://${row.hostname}`;
-      registerLive(id, spawned, publicUrl, 'running');
+      registerLive(id, spawned, publicUrl, 'running', row.mode);
 
       const exitedEarly = await waitForExit(spawned, 1_500);
       if (exitedEarly) {

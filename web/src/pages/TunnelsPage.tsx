@@ -448,7 +448,7 @@ function CreateTunnelDrawer({
   const canSubmit =
     name.trim().length > 0 &&
     (targetType === 'url' ? targetUrl.trim().length > 0 : containerId.length > 0) &&
-    (mode === 'quick' || (hostname.trim().length > 0 && zoneId.length > 0));
+    (mode !== 'named' || (hostname.trim().length > 0 && zoneId.length > 0));
 
   const submit = async () => {
     setError(null);
@@ -499,10 +499,27 @@ function CreateTunnelDrawer({
 
       <TextField label="Name" value={name} onChange={(e) => setName(e.target.value)} required disabled={busy} placeholder="web-preview" />
 
-      <Field label="Mode" hint={mode === 'quick' ? 'Quick tunnels need no Cloudflare account. The URL changes each time.' : 'Named tunnels use your Cloudflare account and keep a stable hostname.'}>
+      <Field
+        label="Mode"
+        hint={
+          mode === 'quick'
+            ? 'Quick tunnels need no Cloudflare account. The URL changes each time.'
+            : mode === 'localtunnel'
+              ? 'LocalTunnel needs no account either, and is the quickest to set up. The URL is assigned by localtunnel.me and changes each time.'
+              : 'Named tunnels use your Cloudflare account and keep a stable hostname.'
+        }
+      >
         <div className="row" style={{ gap: 'var(--space-2)' }}>
           <button type="button" className="chip" aria-pressed={mode === 'quick'} onClick={() => setMode('quick')}>
             quick
+          </button>
+          <button
+            type="button"
+            className="chip"
+            aria-pressed={mode === 'localtunnel'}
+            onClick={() => setMode('localtunnel')}
+          >
+            localtunnel
           </button>
           <button
             type="button"

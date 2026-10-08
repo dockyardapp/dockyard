@@ -63,7 +63,7 @@ server/src/
   auth/         scrypt password hashing, session cookies, roles, audit log
   routes/       one file per resource, mounted under /api
   ws/           log tail, live stats and a global event stream
-  tunnels/      cloudflared supervision: quick and named tunnels
+  tunnels/      tunnel supervision: cloudflared (quick, named) and localtunnel
   cloudflare/   Cloudflare API v4 client
   templates/    template spec, built-in catalog, deploy engine
 web/            React app (see web/DESIGN.md for the design system)
@@ -171,14 +171,21 @@ runtime, so the panel works with no outbound access and the bundle carries only 
 `scripts/gen-template-logos.py`. A template with no mark falls back to its own `icon`, and
 `server/test/template-logos.test.ts` fails if a built-in template is added without one.
 
-## Cloudflare tunnels
+## Tunnels
 
-| | quick (non-persistent) | named (persistent) |
-|---|---|---|
-| Cloudflare account | not needed | required |
-| URL | random `*.trycloudflare.com` | your own hostname on your zone |
-| Survives panel restart | no | yes, if `auto_start` is on |
-| Credentials on disk | none | `data/tunnels/<slug>/credentials.json` |
+Three ways to reach a container from outside. The end user picks one per tunnel.
+
+| | quick | named | localtunnel |
+|---|---|---|---|
+| Account needed | none | Cloudflare | none |
+| URL | random `*.trycloudflare.com` | your own hostname on your zone | random `*.loca.lt` |
+| Survives panel restart | no | yes, if `auto_start` is on | no, the URL is reassigned |
+| Credentials on disk | none | `data/tunnels/<slug>/credentials.json` | none |
+
+Localtunnel is the lightest of the three to set up and the least durable: localtunnel.me assigns
+the URL and it changes on every start. The tunnel name is offered as a subdomain, so a restart
+sometimes lands on the same URL. The client is a library rather than a child process, so the panel
+opens the tunnel in-process and the tunnel has no pid.
 
 Named tunnels need an API token with `Account: Cloudflare Tunnel:Edit` and `Zone:DNS:Edit`. Add it
 in **Settings** (stored AES-256-GCM encrypted in the `settings` table) or via

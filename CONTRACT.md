@@ -2,7 +2,8 @@
 
 A unified control panel for Docker containers. Node.js + Postgres + React.
 Simpler than Portainer: three surfaces (containers, templates, tunnels) plus the plumbing.
-Built-in Cloudflare tunnel support, both **ephemeral (quick)** and **persistent (named)**.
+Built-in tunnel support: **ephemeral (quick)** and **persistent (named)** Cloudflare tunnels, plus
+**LocalTunnel** (no account, no DNS).
 
 Every agent codes against this document. If you believe the contract is wrong, **do not
 silently change it** — implement it as written and report the problem in your summary.
@@ -55,7 +56,7 @@ dockyard/
       routes/            auth.ts system.ts containers.ts images.ts volumes.ts networks.ts
                          templates.ts stacks.ts tunnels.ts settings.ts audit.ts users.ts
       ws/                logs.ts stats.ts events.ts
-      tunnels/           manager.ts supervisor.ts quick.ts named.ts url-parse.ts
+      tunnels/           manager.ts supervisor.ts quick.ts named.ts localtunnel.ts url-parse.ts
       cloudflare/        api.ts
       templates/         schema.ts catalog.ts engine.ts
     test/                *.test.ts  mock-docker.ts
@@ -184,7 +185,7 @@ create index if not exists stacks_slug_idx on stacks(slug);
 create table if not exists tunnels (
   id uuid primary key default gen_random_uuid(),
   name text not null,
-  mode text not null check (mode in ('quick','named')),
+  mode text not null check (mode in ('quick','named','localtunnel')),
   target_url text not null,
   container_id text, port integer,
   hostname text, zone_id text, tunnel_id text,
@@ -424,7 +425,7 @@ The first user created is `admin`.
 
 `Tunnel`:
 ```ts
-{ id: string; name: string; mode: 'quick'|'named'; target_url: string;
+{ id: string; name: string; mode: 'quick'|'named'|'localtunnel'; target_url: string;
   container_id: string|null; container_name: string|null; port: number|null;
   hostname: string|null; tunnel_id: string|null; status: 'stopped'|'starting'|'running'|'error';
   url: string|null; pid: number|null; last_error: string|null; auto_start: boolean;
@@ -503,7 +504,7 @@ export const tunnelManager: {
   shutdown(): Promise<void>;
   reconcile(): Promise<void>;              // marks DB 'running' rows with no live process as 'stopped'
 };
-export type CreateTunnelInput = { name: string; mode: 'quick'|'named';
+export type CreateTunnelInput = { name: string; mode: 'quick'|'named'|'localtunnel';
   target_url?: string; container_id?: string; port?: number;
   hostname?: string; zone_id?: string; auto_start?: boolean };
 ```

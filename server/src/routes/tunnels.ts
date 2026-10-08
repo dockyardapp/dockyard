@@ -21,7 +21,7 @@ import { canSeeTunnel, filterTunnels } from '../tunnels/visibility.ts';
 const createTunnelSchema = z
   .object({
     name: z.string().min(1, 'name is required'),
-    mode: z.enum(['quick', 'named']),
+    mode: z.enum(['quick', 'named', 'localtunnel']),
     target_url: z.string().min(1).optional(),
     container_id: z.string().min(1).optional(),
     port: z.number().int().positive().optional(),
