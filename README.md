@@ -96,8 +96,11 @@ default every authenticated user sees the whole host. `users.scope_mode` adds th
 - `granted` — exactly the resources listed in `user_grants`, nothing else.
 
 A grant is either an explicit resource (`resource_id`) or a label selector (`label_key` +
-`label_value`), never both. **Prefer labels**: an explicit container id stops matching the moment
-that container is recreated, whereas a label survives it.
+`label_value`), never both.
+
+The admin UI defaults to the explicit form because it needs no vocabulary: pick the user, tick the
+resources they should have. A grant written that way stores the resource's **name** (or slug, or
+image tag), so the allocation list reads as `dy-demo-app` rather than a 64 character digest.
 
 ```
 GET    /api/users/:id/grants            list the allocation
@@ -111,8 +114,14 @@ A scoped-out resource returns `404` rather than `403` on purpose, because a `403
 resource exists and would let a restricted user enumerate the host by probing ids. Dashboard
 counts are recomputed for a scoped user, since the engine totals describe the whole host.
 
-Anything a scoped user creates inherits their grant label, so their own work stays visible: a
-container they run, a volume they add, a stack they deploy from an allocated template.
+Two consequences follow from a name grant, and both are why the label form still exists (it sits
+under **Advanced** in the dialog, one click away):
+
+- Renaming or recreating the resource drops the grant, since the name no longer matches.
+- A resource the user creates themselves is *not* granted, so it stays hidden until an admin ticks
+  it. A label grant does not have this problem: it keeps matching through a recreate, and anything
+  the user creates afterwards inherits the label, so their own work stays visible (a container they
+  run, a volume they add, a stack they deploy from an allocated template).
 
 Two things are deliberately not on the ladder:
 

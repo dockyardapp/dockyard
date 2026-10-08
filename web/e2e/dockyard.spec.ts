@@ -127,13 +127,12 @@ test('an admin gets the destructive controls enabled', async ({ page }) => {
   if (count > 0) await expect(deletes.first()).toBeEnabled();
 });
 
-test('an admin allocates a resource and the scoped user sees only that', async ({
+test('an admin ticks a resource for a user and that user sees only it', async ({
   page,
   request,
   baseURL,
 }) => {
   const stamp = Date.now();
-  const team = `e2e-team-${stamp}`;
   const email = `e2e-scoped-${stamp}@dockyard.local`;
   const password = tempPassword();
   const containerName = `dy-e2e-scope-${stamp}`;
@@ -141,8 +140,8 @@ test('an admin allocates a resource and the scoped user sees only that', async (
 
   await ensureUser(request, baseURL!, admin, { email, password, role: 'operator' });
   try {
-    // A real container carrying the label the admin is about to allocate. The
-    // second container is deliberately unlabelled, so a leak would be visible.
+    // A real container. The second, unlabelled one the admin creates belongs to
+    // the admin only, so a leak would be visible.
     await request.post(`${baseURL}/api/auth/login`, { data: admin });
     const created = await request.post(`${baseURL}/api/containers`, {
       data: {
@@ -150,30 +149,34 @@ test('an admin allocates a resource and the scoped user sees only that', async (
         image: 'alpine:3.20',
         cmd: ['sh', '-c', 'sleep 120'],
         pull: false,
-        labels: { 'dockyard.team': team },
       },
     });
     expect(created.status()).toBe(201);
     containerId = ((await created.json()) as { id: string }).id;
 
-    // Allocate it through the real admin UI, not the API.
+    // Grant it through the real admin UI: pick the user, tick the box.
     await login(page, admin.email, admin.password);
     await page.goto('/settings');
-    await page.getByRole('button', { name: `Resource allocation for ${email}` }).click();
+    await page.getByRole('button', { name: `Resource access for ${email}` }).click();
 
-    const dialog = page.getByRole('dialog', { name: 'Resource allocation' });
+    const dialog = page.getByRole('dialog', { name: 'Resource access' });
     await expect(dialog).toBeVisible();
-    await dialog.getByLabel('Label key').fill('dockyard.team');
-    await dialog.getByLabel('Label value').fill(team);
-    await dialog.getByRole('button', { name: /^Allocate$/ }).click();
-    await expect(dialog.getByText(`dockyard.team = ${team}`)).toBeVisible();
 
-    // Adding the first grant switches the account to scoped, and the dialog has
-    // to say so: it used to keep the stale badge and keep warning that grants
-    // have no effect while the user is unscoped.
+    // The picker names the resource, so the admin ticks it without knowing an id.
+    const box = dialog.getByRole('checkbox', { name: `${containerName} for ${email}` });
+    await expect(box).not.toBeChecked();
+    await box.check();
+    await expect(box).toBeChecked();
+
+    // It lands in the granted table, named.
+    await expect(dialog.getByRole('table').getByText(containerName)).toBeVisible();
+
+    // Ticking the first resource switches the account to scoped, and the dialog
+    // has to say so: it used to keep the stale badge and keep warning that the
+    // user still saw the whole host.
     await expect(dialog.getByText('scoped', { exact: true })).toBeVisible();
     await expect(dialog.getByText('unscoped')).toHaveCount(0);
-    await expect(dialog.getByText(/Grants have no effect/)).toHaveCount(0);
+    await expect(dialog.getByText(/still sees the whole host/)).toHaveCount(0);
 
     // The dialog has two Close controls (header icon and footer button); either
     // dismisses it.

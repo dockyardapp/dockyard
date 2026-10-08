@@ -275,6 +275,11 @@ signals element size rather than adding decoration.
 - **empty:** the no-data state. Its title is a real `h2`, so a screen reader can jump straight to it.
 - **row-cap:** the footer under a capped table. Names the visible count, the true total and the way
   to see everything.
+- **pick-list / pick-row:** the tick-a-resource list in the access dialog. Scrolls past 264px inside
+  a `border-subtle` frame at 6px radius, and deliberately borrows `table.data`'s row treatment rather
+  than inventing one: 13px cells, 12px padding, the resource name in `text-primary` at weight 510,
+  its descriptor (image, state, driver) right-aligned in `text-tertiary` at 13px mono, hairline
+  dividers and a `--bg-card` hover. The checkbox keeps the shared `checkbox` sizing.
 
 ## Long lists
 

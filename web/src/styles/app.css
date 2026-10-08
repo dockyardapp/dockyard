@@ -687,6 +687,49 @@ table.data .primary { color: var(--text-primary); font-weight: var(--fw-ui); }
   font-size: var(--fs-xs);
 }
 .nowrap { white-space: nowrap; }
+
+/* Resource picker: Settings > a user > Resource access. Deliberately matches
+   table.data (13px cells, 12px padding, primary name at weight 510, tertiary
+   descriptor, --bg-card hover, hairline dividers) because it is a list of
+   resources on the same page as the resource tables. The checkbox itself keeps
+   the shared .checkbox sizing. */
+.pick-list {
+  max-height: 264px;
+  overflow-y: auto;
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-md);
+}
+.pick-row {
+  width: 100%;
+  padding: var(--space-3);
+  font-size: var(--fs-xs);
+  font-weight: var(--fw-read);
+}
+.pick-row + .pick-row { border-top: 1px solid var(--border-subtle); }
+.pick-row:hover { background: var(--bg-card); }
+.pick-name {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--text-primary);
+  font-weight: var(--fw-ui);
+}
+.pick-detail {
+  flex: 0 0 auto;
+  font-family: var(--font-mono);
+  font-size: var(--fs-xs);
+  color: var(--text-tertiary);
+}
+.advanced-block {
+  margin-top: var(--space-3);
+  padding: var(--space-3);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-md);
+  background: var(--bg-card);
+}
+.advanced-block > .btn { margin-top: var(--space-2); }
 .row { display: flex; align-items: center; gap: var(--space-2); }
 .row.wrap { flex-wrap: wrap; }
 .stack { display: flex; flex-direction: column; gap: var(--space-3); }

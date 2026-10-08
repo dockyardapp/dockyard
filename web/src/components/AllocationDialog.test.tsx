@@ -6,9 +6,9 @@ import { endpoints } from '../api/client';
 import type { AdminUser, Grant } from '../api/types';
 
 /**
- * The allocation editor is the only place an admin can hand out access, so the
- * behaviour worth pinning is: what it sends, what it refuses to offer, and that
- * an admin account is read-only here.
+ * The allocation editor is the only place an admin can hand out access. The
+ * behaviour worth pinning is what it sends, that a tick lands without waiting on
+ * the network, and that an admin account is read-only here.
  */
 
 vi.mock('../api/client', async (importOriginal) => {
@@ -23,19 +23,31 @@ vi.mock('../api/client', async (importOriginal) => {
         removeGrant: vi.fn(),
         update: vi.fn(),
       },
+      containers: { list: vi.fn() },
+      stacks: { list: vi.fn() },
+      volumes: { list: vi.fn() },
+      networks: { list: vi.fn() },
+      images: { list: vi.fn() },
+      templates: { list: vi.fn() },
+      tunnels: { list: vi.fn() },
     },
   };
 });
 
-const mocked = endpoints.users as unknown as {
-  grants: ReturnType<typeof vi.fn>;
-  addGrant: ReturnType<typeof vi.fn>;
-  clearGrants: ReturnType<typeof vi.fn>;
-  removeGrant: ReturnType<typeof vi.fn>;
-  update: ReturnType<typeof vi.fn>;
+type Mock = ReturnType<typeof vi.fn>;
+
+const mocked = endpoints as unknown as {
+  users: { grants: Mock; addGrant: Mock; clearGrants: Mock; removeGrant: Mock; update: Mock };
+  containers: { list: Mock };
+  stacks: { list: Mock };
+  volumes: { list: Mock };
+  networks: { list: Mock };
+  images: { list: Mock };
+  templates: { list: Mock };
+  tunnels: { list: Mock };
 };
 
-function makeAdminUser(extra: Partial<AdminUser> = {}): AdminUser {
+function makeUser(extra: Partial<AdminUser> = {}): AdminUser {
   return {
     id: 'user-1',
     email: 'alice@dockyard.local',
@@ -49,160 +61,248 @@ function makeAdminUser(extra: Partial<AdminUser> = {}): AdminUser {
   };
 }
 
-const labelGrant: Grant = {
+const containerGrant: Grant = {
   id: 'grant-1',
   resource_kind: 'container',
-  resource_id: null,
-  label_key: 'dockyard.team',
-  label_value: 'alice',
-};
-
-const idGrant: Grant = {
-  id: 'grant-2',
-  resource_kind: 'template',
-  resource_id: 'redis',
+  resource_id: 'dy-demo-app',
   label_key: null,
   label_value: null,
 };
 
+const labelGrant: Grant = {
+  id: 'grant-2',
+  resource_kind: 'container',
+  resource_id: null,
+  label_key: 'dockyard.team',
+  label_value: 'platform',
+};
+
+function renderDialog(user: AdminUser = makeUser(), onChanged = vi.fn()) {
+  render(<AllocationDialog user={user} onClose={() => {}} onChanged={onChanged} />);
+  return onChanged;
+}
+
 beforeEach(() => {
   vi.clearAllMocks();
-  mocked.grants.mockResolvedValue([]);
+  mocked.users.grants.mockResolvedValue([]);
+  mocked.users.addGrant.mockResolvedValue(undefined);
+  mocked.users.removeGrant.mockResolvedValue(undefined);
+  mocked.users.clearGrants.mockResolvedValue(undefined);
+  mocked.users.update.mockResolvedValue(undefined);
+  mocked.containers.list.mockResolvedValue([
+    { id: 'c1', name: 'dy-demo-app', image: 'alpine:3.20', state: 'running' },
+    { id: 'c2', name: 'dy-demo-other', image: 'nginx:1.27', state: 'exited' },
+  ]);
+  mocked.stacks.list.mockResolvedValue([{ id: 's1', name: 'shop', status: 'running' }]);
+  mocked.volumes.list.mockResolvedValue([{ name: 'dy-vol', driver: 'local' }]);
+  mocked.networks.list.mockResolvedValue([{ name: 'dy-net', driver: 'bridge' }]);
+  mocked.images.list.mockResolvedValue([
+    { id: 'sha256:abcdef0123456789', repoTags: ['redis:7.4'], size: 40_000_000 },
+  ]);
+  mocked.templates.list.mockResolvedValue([
+    { id: 't1', slug: 'redis', name: 'Redis', category: 'database' },
+  ]);
+  mocked.tunnels.list.mockResolvedValue([
+    { id: 'n1', name: 'edge', mode: 'quick', status: 'running' },
+  ]);
 });
 
 describe('AllocationDialog', () => {
-  it('lists the allocated resources with their selector', async () => {
-    mocked.grants.mockResolvedValue([labelGrant, idGrant]);
-    render(<AllocationDialog user={makeAdminUser()} onClose={() => {}} onChanged={() => {}} />);
+  it('lists the host\'s resources by name, with the allocated ones already ticked', async () => {
+    mocked.users.grants.mockResolvedValue([containerGrant]);
+    renderDialog();
 
-    expect(await screen.findByText('dockyard.team = alice')).toBeTruthy();
-    expect(screen.getByText('redis')).toBeTruthy();
+    const app = await screen.findByRole('checkbox', { name: /dy-demo-app/ });
+    const other = screen.getByRole('checkbox', { name: /dy-demo-other/ });
 
-    // Scope the kind assertions to the table: the same nouns also appear as
-    // options in the "Kind" picker below it.
-    const table = screen.getByRole('table');
-    expect(within(table).getByText('containers')).toBeTruthy();
-    expect(within(table).getByText('templates')).toBeTruthy();
+    expect(app).toHaveProperty('checked', true);
+    expect(other).toHaveProperty('checked', false);
+    // Named and described, never a raw digest.
+    expect(screen.getByText('alpine:3.20 · running')).toBeTruthy();
+    expect(screen.getByText('nginx:1.27 · exited')).toBeTruthy();
+  });
+
+  it('reads every kind once, so switching kind is instant', async () => {
+    renderDialog();
+    await screen.findByRole('checkbox', { name: /dy-demo-app/ });
+
+    expect(mocked.containers.list).toHaveBeenCalledWith({ all: true });
+    expect(mocked.stacks.list).toHaveBeenCalledTimes(1);
+    expect(mocked.volumes.list).toHaveBeenCalledTimes(1);
+    expect(mocked.networks.list).toHaveBeenCalledTimes(1);
+    expect(mocked.images.list).toHaveBeenCalledTimes(1);
+    expect(mocked.templates.list).toHaveBeenCalledTimes(1);
+    expect(mocked.tunnels.list).toHaveBeenCalledTimes(1);
+  });
+
+  it('grants a resource by name when it is ticked', async () => {
+    const user = userEvent.setup();
+    const onChanged = renderDialog();
+
+    await user.click(await screen.findByRole('checkbox', { name: /dy-demo-app/ }));
+
+    await waitFor(() =>
+      expect(mocked.users.addGrant).toHaveBeenCalledWith('user-1', {
+        resource_kind: 'container',
+        resource_id: 'dy-demo-app',
+      }),
+    );
+    // Wait for the whole chain: the reload and the parent notification are what
+    // the admin sees next, and leaving them floating leaks into the next test.
+    await waitFor(() => expect(onChanged).toHaveBeenCalled());
+  });
+
+  it('moves the tick before the request comes back', async () => {
+    const user = userEvent.setup();
+    let release: () => void = () => {};
+    mocked.users.addGrant.mockReturnValue(
+      new Promise<void>((resolve) => {
+        release = () => resolve();
+      }),
+    );
+    renderDialog();
+
+    const box = await screen.findByRole('checkbox', { name: /dy-demo-app/ });
+    await user.click(box);
+
+    // Still in flight: a checkbox that waits on the round trip reads as broken.
+    expect(box).toHaveProperty('checked', true);
+    release();
+    await waitFor(() => expect(mocked.users.addGrant).toHaveBeenCalled());
+    await screen.findByText('dy-demo-app');
+  });
+
+  it('puts the tick back and says so when the grant fails', async () => {
+    const user = userEvent.setup();
+    mocked.users.addGrant.mockRejectedValue(new Error('nope'));
+    renderDialog();
+
+    const box = await screen.findByRole('checkbox', { name: /dy-demo-app/ });
+    await user.click(box);
+
+    expect(await screen.findByText('Access change failed')).toBeTruthy();
+    await waitFor(() => expect(box).toHaveProperty('checked', false));
+  });
+
+  it('removes the grant when a resource is unticked', async () => {
+    const user = userEvent.setup();
+    mocked.users.grants.mockResolvedValue([containerGrant]);
+    const onChanged = renderDialog();
+
+    await user.click(await screen.findByRole('checkbox', { name: /dy-demo-app/ }));
+
+    await waitFor(() =>
+      expect(mocked.users.removeGrant).toHaveBeenCalledWith('user-1', 'grant-1'),
+    );
+    await waitFor(() => expect(onChanged).toHaveBeenCalled());
+  });
+
+  it('narrows the list by name or image', async () => {
+    const user = userEvent.setup();
+    renderDialog();
+
+    await screen.findByRole('checkbox', { name: /dy-demo-app/ });
+    await user.type(screen.getByLabelText('Filter'), 'nginx');
+
+    expect(screen.queryByRole('checkbox', { name: /dy-demo-app/ })).toBeNull();
+    expect(screen.getByRole('checkbox', { name: /dy-demo-other/ })).toBeTruthy();
+  });
+
+  it('keeps the label form behind Advanced', async () => {
+    const user = userEvent.setup();
+    const onChanged = renderDialog();
+
+    await screen.findByRole('checkbox', { name: /dy-demo-app/ });
+    // Not the thing an admin meets first.
+    expect(screen.queryByPlaceholderText('dockyard.team')).toBeNull();
+
+    await user.click(screen.getByRole('button', { name: /advanced/i }));
+    await user.type(screen.getByPlaceholderText('dockyard.team'), 'dockyard.team');
+    await user.type(screen.getByPlaceholderText('platform'), 'platform');
+    await user.click(screen.getByRole('button', { name: /^Add$/ }));
+
+    await waitFor(() =>
+      expect(mocked.users.addGrant).toHaveBeenCalledWith('user-1', {
+        resource_kind: 'container',
+        label_key: 'dockyard.team',
+        label_value: 'platform',
+      }),
+    );
+    await waitFor(() => expect(onChanged).toHaveBeenCalled());
+  });
+
+  it('will not add an empty advanced selector', async () => {
+    const user = userEvent.setup();
+    renderDialog();
+
+    await screen.findByRole('checkbox', { name: /dy-demo-app/ });
+    await user.click(screen.getByRole('button', { name: /advanced/i }));
+
+    const add = screen.getByRole('button', { name: /^Add$/ });
+    expect(add).toHaveProperty('disabled', true);
+
+    await user.type(screen.getByPlaceholderText('dockyard.team'), 'team');
+    await waitFor(() => expect(add).toHaveProperty('disabled', false));
+  });
+
+  it('removes one grant, and all of them', async () => {
+    const user = userEvent.setup();
+    mocked.users.grants.mockResolvedValue([containerGrant, labelGrant]);
+    const onChanged = renderDialog();
+
+    await screen.findByText('dockyard.team = platform');
+    await user.click(screen.getByRole('button', { name: 'Remove access to dy-demo-app' }));
+    await waitFor(() =>
+      expect(mocked.users.removeGrant).toHaveBeenCalledWith('user-1', 'grant-1'),
+    );
+
+    await user.click(screen.getByRole('button', { name: /remove all access/i }));
+    await waitFor(() => expect(mocked.users.clearGrants).toHaveBeenCalledWith('user-1'));
+    await waitFor(() => expect(onChanged).toHaveBeenCalled());
   });
 
   it('says plainly when a scoped user has nothing at all', async () => {
-    mocked.grants.mockResolvedValue([]);
-    render(<AllocationDialog user={makeAdminUser()} onClose={() => {}} onChanged={() => {}} />);
+    renderDialog();
 
-    expect(await screen.findByText('Nothing allocated')).toBeTruthy();
-    expect(screen.getByText(/sees no resources at all/i)).toBeTruthy();
+    expect(await screen.findByText(/sees no resources at all/i)).toBeTruthy();
   });
 
-  it('offers to scope an unscoped user, and warns that a grant would do it anyway', async () => {
-    mocked.grants.mockResolvedValue([]);
-    render(
-      <AllocationDialog
-        user={makeAdminUser({ scope_mode: 'all' })}
-        onClose={() => {}}
-        onChanged={() => {}}
-      />,
-    );
+  it('tells an unscoped user that a tick is what restricts them', async () => {
+    renderDialog(makeUser({ scope_mode: 'all' }));
 
-    expect(await screen.findByText('Restrict to allocated resources')).toBeTruthy();
-    expect(screen.getByText(/have no effect while this user is unscoped/i)).toBeTruthy();
-    expect(screen.getByText(/sees the whole host until you allocate something/i)).toBeTruthy();
-  });
-
-  it('sends a label selector as a label grant', async () => {
-    const user = userEvent.setup();
-    const onChanged = vi.fn();
-    render(<AllocationDialog user={makeAdminUser()} onClose={() => {}} onChanged={onChanged} />);
-
-    const key = await screen.findByPlaceholderText('dockyard.team');
-    await user.type(key, 'dockyard.team');
-    await user.type(screen.getByPlaceholderText('alice'), 'bob');
-    await user.click(screen.getByRole('button', { name: /allocate/i }));
-
-    await waitFor(() => expect(mocked.addGrant).toHaveBeenCalledTimes(1));
-    expect(mocked.addGrant).toHaveBeenCalledWith('user-1', {
-      resource_kind: 'container',
-      label_key: 'dockyard.team',
-      label_value: 'bob',
-    });
-    // The list is re-read and the parent told, so the count in the table updates.
-    expect(mocked.grants).toHaveBeenCalled();
-    expect(onChanged).toHaveBeenCalled();
-  });
-
-  it('sends an exact id when the selector is switched', async () => {
-    const user = userEvent.setup();
-    render(<AllocationDialog user={makeAdminUser()} onClose={() => {}} onChanged={() => {}} />);
-
-    await screen.findByPlaceholderText('dockyard.team');
-    await user.selectOptions(screen.getByLabelText('Selector'), 'id');
-    await user.type(screen.getByPlaceholderText('redis'), 'redis');
-    await user.click(screen.getByRole('button', { name: /allocate/i }));
-
-    await waitFor(() => expect(mocked.addGrant).toHaveBeenCalledTimes(1));
-    expect(mocked.addGrant).toHaveBeenCalledWith('user-1', {
-      resource_kind: 'container',
-      resource_id: 'redis',
-    });
-  });
-
-  it('will not submit an empty selector', async () => {
-    const user = userEvent.setup();
-    render(<AllocationDialog user={makeAdminUser()} onClose={() => {}} onChanged={() => {}} />);
-
-    const allocate = await screen.findByRole('button', { name: /allocate/i });
-    expect(allocate).toHaveProperty('disabled', true);
-
-    await user.type(screen.getByPlaceholderText('dockyard.team'), 'team');
-    await waitFor(() => expect(allocate).toHaveProperty('disabled', false));
-  });
-
-  it('removes a single grant and clears them all', async () => {
-    const user = userEvent.setup();
-    mocked.grants.mockResolvedValue([labelGrant, idGrant]);
-    render(<AllocationDialog user={makeAdminUser()} onClose={() => {}} onChanged={() => {}} />);
-
-    await screen.findByText('dockyard.team = alice');
-    await user.click(screen.getByRole('button', { name: 'Remove grant dockyard.team = alice' }));
-    await waitFor(() => expect(mocked.removeGrant).toHaveBeenCalledWith('user-1', 'grant-1'));
-
-    await user.click(screen.getByRole('button', { name: /clear all grants/i }));
-    await waitFor(() => expect(mocked.clearGrants).toHaveBeenCalledWith('user-1'));
+    expect(await screen.findByText(/still sees the whole host/i)).toBeTruthy();
+    expect(screen.getByText(/restricts them to it automatically/i)).toBeTruthy();
   });
 
   it('switches a scoped user back to the whole host', async () => {
     const user = userEvent.setup();
-    render(<AllocationDialog user={makeAdminUser()} onClose={() => {}} onChanged={() => {}} />);
+    const onChanged = renderDialog();
 
-    await user.click(await screen.findByRole('button', { name: /grant full host access/i }));
+    await user.click(await screen.findByRole('button', { name: /give full host access/i }));
     await waitFor(() =>
-      expect(mocked.update).toHaveBeenCalledWith('user-1', { scope_mode: 'all' }),
+      expect(mocked.users.update).toHaveBeenCalledWith('user-1', { scope_mode: 'all' }),
     );
+    await waitFor(() => expect(onChanged).toHaveBeenCalled());
   });
 
   it('is read-only for an admin, who always sees everything', async () => {
-    render(
-      <AllocationDialog
-        user={makeAdminUser({ role: 'admin', scope_mode: 'all' })}
-        onClose={() => {}}
-        onChanged={() => {}}
-      />,
-    );
+    renderDialog(makeUser({ role: 'admin', scope_mode: 'all' }));
 
     expect(await screen.findByText('Administrators are never scoped')).toBeTruthy();
-    // No allocation controls at all: an admin cannot be restricted.
-    expect(screen.queryByRole('button', { name: /allocate/i })).toBeNull();
-    expect(screen.queryByPlaceholderText('dockyard.team')).toBeNull();
-    expect(mocked.grants).not.toHaveBeenCalled();
+    expect(screen.queryByRole('checkbox')).toBeNull();
+    expect(screen.queryByRole('button', { name: /advanced/i })).toBeNull();
+    expect(mocked.users.grants).not.toHaveBeenCalled();
+    expect(mocked.containers.list).not.toHaveBeenCalled();
   });
 
-  it('reports a failed change instead of pretending it worked', async () => {
-    const user = userEvent.setup();
-    mocked.addGrant.mockRejectedValue(new Error('nope'));
-    render(<AllocationDialog user={makeAdminUser()} onClose={() => {}} onChanged={() => {}} />);
+  it('shows the granted resource next to its kind', async () => {
+    mocked.users.grants.mockResolvedValue([containerGrant]);
+    renderDialog();
 
-    await user.type(await screen.findByPlaceholderText('dockyard.team'), 'team');
-    await user.click(screen.getByRole('button', { name: /allocate/i }));
-
-    expect(await screen.findByText('Allocation change failed')).toBeTruthy();
+    await screen.findByRole('checkbox', { name: /dy-demo-app/ });
+    const table = screen.getByRole('table');
+    expect(within(table).getByText('dy-demo-app')).toBeTruthy();
+    expect(within(table).getByText('containers')).toBeTruthy();
+    expect(within(table).getByText('name')).toBeTruthy();
   });
 });

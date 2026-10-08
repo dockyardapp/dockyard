@@ -232,7 +232,7 @@ export function SettingsPage() {
                       <Button
                         size="sm"
                         onClick={() => setAllocUser(u)}
-                        aria-label={`Resource allocation for ${u.email}`}
+                        aria-label={`Resource access for ${u.email}`}
                         title={
                           u.role === 'admin'
                             ? 'Administrators always see every resource'
@@ -242,7 +242,9 @@ export function SettingsPage() {
                         {u.role === 'admin'
                           ? 'full host'
                           : u.scope_mode === 'granted'
-                            ? `${u.grant_count} allocated`
+                            ? u.grant_count === 1
+                              ? '1 resource'
+                              : `${u.grant_count} resources`
                             : 'full host'}
                       </Button>
                     </td>
