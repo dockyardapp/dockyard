@@ -41,7 +41,7 @@ COPY --from=cloudflared /usr/local/bin/cloudflared /usr/local/bin/cloudflared
 RUN mkdir -p /app/data/tunnels && chown -R dockyard:dockyard /app
 
 ENV NODE_ENV=production \
-    PORT=8190 \
+    PORT=8000 \
     HOST=0.0.0.0 \
     TUNNEL_DATA_DIR=/app/data/tunnels \
     CLOUDFLARED_BIN=/usr/local/bin/cloudflared
@@ -50,10 +50,10 @@ ENV NODE_ENV=production \
 # expected deployment. It runs as a non-root user, so the socket needs to be
 # reachable by gid 1001 (or run with --group-add $(getent group docker | cut -d: -f3)).
 USER dockyard
-EXPOSE 8190
+EXPOSE 8000
 
 HEALTHCHECK --interval=30s --timeout=5s --start-period=20s --retries=3 \
-  CMD node -e "fetch('http://127.0.0.1:'+(process.env.PORT||8190)+'/api/system/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"
+  CMD node -e "fetch('http://127.0.0.1:'+(process.env.PORT||8000)+'/api/system/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"
 
 ENTRYPOINT ["/sbin/tini", "--"]
 CMD ["node", "server/src/index.ts"]

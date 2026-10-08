@@ -5,7 +5,7 @@ import path from 'node:path';
 const here = path.dirname(fileURLToPath(import.meta.url));
 const repoRoot = path.resolve(here, '..');
 
-const PORT = Number(process.env.DOCKYARD_E2E_PORT ?? 8191);
+const PORT = Number(process.env.DOCKYARD_E2E_PORT ?? 8000);
 const BASE_URL = process.env.DOCKYARD_BASE_URL ?? `http://127.0.0.1:${PORT}`;
 
 /**

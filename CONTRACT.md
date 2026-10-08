@@ -64,7 +64,7 @@ dockyard/
     src/                 main.tsx App.tsx styles/ api/ components/ pages/ hooks/
 ```
 
-Ports: API `8190`, Vite dev `5190`. Production: Fastify serves `web/dist` and the SPA fallback.
+Ports: API `8000`, Vite dev `5190`. Production: Fastify serves `web/dist` and the SPA fallback.
 
 ---
 
@@ -646,7 +646,7 @@ npx tsc -p server/tsconfig.json --noEmit           # server typecheck
 npm --workspace web run typecheck                  # web typecheck
 npm --workspace web run build                      # web build
 node --test server/test/                           # server tests
-node server/src/index.ts                           # boot the API on :8190
+node server/src/index.ts                           # boot the API on :8000
 ```
 
 `server/test/mock-docker.ts` is a **test double**: an HTTP server that speaks the subset of the

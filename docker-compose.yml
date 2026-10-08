@@ -32,9 +32,9 @@ services:
         condition: service_healthy
     environment:
       NODE_ENV: ${NODE_ENV:-production}
-      PORT: 8190
+      PORT: 8000
       HOST: 0.0.0.0
-      PUBLIC_URL: ${PUBLIC_URL:-http://localhost:8190}
+      PUBLIC_URL: ${PUBLIC_URL:-http://localhost:8000}
       DATABASE_URL: postgres://dockyard:${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD}@db:5432/dockyard
       SECRET_KEY: ${SECRET_KEY:?set SECRET_KEY (64 hex chars)}
       # The panel is itself a container, so a tunnel targeting another container's
@@ -55,7 +55,11 @@ services:
     group_add:
       - "${DOCKER_GID:?set DOCKER_GID to the host docker group id: export DOCKER_GID=$(getent group docker | cut -d: -f3)}"
     ports:
-      - "${PANEL_PORT:-8190}:8190"
+      # The panel listens on 8000 inside the container and is published on 8000
+      # by default. The one exception is a tunnel: a quick or named cloudflared
+      # tunnel expects to reach the panel on plain port 80, so set
+      # PANEL_PORT=80 in that case and point the tunnel at 127.0.0.1:80.
+      - "${PANEL_PORT:-8000}:8000"
     volumes:
       # Docker control plane. The panel user needs read/write on this socket.
       - /var/run/docker.sock:/var/run/docker.sock

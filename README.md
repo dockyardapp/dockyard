@@ -23,10 +23,10 @@ cd dockyard
 cp .env.example .env            # fill in DATABASE_URL, SECRET_KEY, admin credentials
 npm install
 node server/src/db/migrate.ts   # create the schema
-node server/src/index.ts        # API + built frontend on http://localhost:8190
+node server/src/index.ts        # API + built frontend on http://localhost:8000
 ```
 
-Frontend development runs Vite on `:5190` and proxies `/api` and `/ws` to `:8190`:
+Frontend development runs Vite on `:5190` and proxies `/api` and `/ws` to `:8000`:
 
 ```bash
 npm --workspace web run dev
@@ -43,9 +43,9 @@ export DOCKER_GID="$(getent group docker | cut -d: -f3)"
 docker compose up -d --build
 ```
 
-`PANEL_PORT` chooses the published port (default 8190); set it to 80 or 443 on a host with no
-reverse proxy in front. `PUBLIC_URL` should match whatever you publish, because the UI uses it for
-the links it shows.
+`PANEL_PORT` chooses the host-side port (default 8000). The panel itself always listens on 8000;
+the only deployment that differs is one behind a tunnel, which publishes it on **80** instead.
+`PUBLIC_URL` should match whatever you publish, because the UI uses it for the links it shows.
 
 The compose file mounts `/var/run/docker.sock` into the panel and sets
 `TUNNEL_TARGET_HOST=host.docker.internal` so tunnels can reach containers' published ports from

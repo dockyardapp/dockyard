@@ -151,10 +151,10 @@ function buildConfig(): Config {
 
   return {
     env,
-    port: Number(process.env.PORT ?? 8190),
+    port: Number(process.env.PORT ?? 8000),
     host: process.env.HOST ?? '0.0.0.0',
     logLevel: (process.env.LOG_LEVEL ?? 'info').toLowerCase(),
-    publicUrl: (process.env.PUBLIC_URL ?? 'http://localhost:8190').replace(/\/+$/, ''),
+    publicUrl: (process.env.PUBLIC_URL ?? 'http://localhost:8000').replace(/\/+$/, ''),
     databaseUrl: (process.env.DATABASE_URL ?? '').trim(),
     dockerHost: (process.env.DOCKER_HOST ?? '').trim(),
     dockerTls: buildDockerTls(),
