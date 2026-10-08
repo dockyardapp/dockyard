@@ -280,6 +280,24 @@ signals element size rather than adding decoration.
   than inventing one: 13px cells, 12px padding, the resource name in `text-primary` at weight 510,
   its descriptor (image, state, driver) right-aligned in `text-tertiary` at 13px mono, hairline
   dividers and a `--bg-card` hover. The checkbox keeps the shared `checkbox` sizing.
+- **template-logo:** the brand mark on a template card, fitted to a 56x28 slot in `.tpl-head` to
+  the left of the template name. Each mark is the product's own SVG path in its own brand colour,
+  not a theme token, so a grid of cards stays scannable. Two details are load-bearing:
+  - The mark is fitted to the slot through its own tight `viewBox` with
+    `preserveAspectRatio="xMinYMid meet"`, not drawn in the vendor's square 24x24 box. The vendor
+    normalises each mark to fill either the width or the height of that box, so drawing it square
+    renders a wide mark short: MySQL's wordmark came out 13.6px tall and n8n's 10.5px beside marks
+    that filled the box. Fitting the tight box gives every mark the same 28px height, and only the
+    ones wider than the slot give any up.
+  - 28px, not the 20px the emoji used. Rasterised at 20px and magnified, 8 of the 17 marks were not
+    legible. At 28px, 14 of them are. 28px also fits the existing 41px card head, so the card layout
+    is unchanged. The three that stay abstract at any small size are the ones whose logos are
+    abstract to begin with (Uptime Kuma's ring, MinIO's swoosh, Traefik's interlocking lines); that
+    is the mark, not a rendering fault.
+  A mark whose brand colour falls below 3:1 on the card is lifted within its own hue until it clears
+  (Adminer is the one such mark, `#34567C` to `#3d6692`) and flagged `adjusted` in
+  `templateLogos.ts`. Templates with no mark fall back to their own `icon`, and the mark is
+  `aria-hidden` because the name beside it already says which product it is.
 
 ## Long lists
 
@@ -302,7 +320,7 @@ Measured on a host with 261 volumes: 250 rows rendered, the footer reported "Sho
 - Do use monospace for anything the operator might copy: ids, image tags, ports, URLs, log lines.
 - Do pair every destructive control with a confirm dialog and a disabled or busy state.
 - Don't use gradients as decoration, glassmorphism, or emoji in UI chrome. Template icons are data
-  and are the one exception.
+  and are the one exception, and only for a template with no brand mark of its own.
 - Don't use pure white as body text. `#f7f8f8` is the ceiling.
 - Don't introduce warm greys into the chrome.
 

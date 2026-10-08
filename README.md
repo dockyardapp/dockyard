@@ -165,6 +165,12 @@ dockyard.template=<template slug>
 so the panel can tell its own containers apart from anything else on the host. User templates can
 be created, edited and deleted from the UI and are validated against the same spec schema.
 
+Each template card shows the deployed product's real logo. The marks are vendored, not fetched at
+runtime, so the panel works with no outbound access and the bundle carries only the 17 it needs.
+`web/src/components/templateLogos.ts` is generated; to change it, see the header of
+`scripts/gen-template-logos.py`. A template with no mark falls back to its own `icon`, and
+`server/test/template-logos.test.ts` fails if a built-in template is added without one.
+
 ## Cloudflare tunnels
 
 | | quick (non-persistent) | named (persistent) |

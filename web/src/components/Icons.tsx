@@ -1,6 +1,7 @@
 /**
  * Inline line-icon set. Stroke-based, 16px default, currentColor.
- * No emoji anywhere in UI chrome (template icons are data and rendered as text).
+ * No emoji in UI chrome. Template icons are data, and are only rendered as text
+ * when the template has no brand mark of its own (see TemplateLogo).
  */
 import type { SVGProps } from 'react';
 

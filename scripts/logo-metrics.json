@@ -1,0 +1,189 @@
+[
+ {
+  "tpl": "n8n",
+  "si": "n8n",
+  "x": 0,
+  "y": 5.68,
+  "w": 24,
+  "h": 12.63,
+  "aspect": 1.9,
+  "inkH": 10.5,
+  "coverage": 29.6
+ },
+ {
+  "tpl": "mysql",
+  "si": "mysql",
+  "x": 0,
+  "y": 3.85,
+  "w": 24,
+  "h": 16.3,
+  "aspect": 1.47,
+  "inkH": 13.6,
+  "coverage": 19.5
+ },
+ {
+  "tpl": "adminer",
+  "si": "adminer",
+  "x": 0,
+  "y": 2.17,
+  "w": 24,
+  "h": 19.65,
+  "aspect": 1.22,
+  "inkH": 16.4,
+  "coverage": 21.6
+ },
+ {
+  "tpl": "whoami",
+  "si": "traefikproxy",
+  "x": 0,
+  "y": 1.19,
+  "w": 24,
+  "h": 21.62,
+  "aspect": 1.11,
+  "inkH": 18,
+  "coverage": 39.4
+ },
+ {
+  "tpl": "uptime-kuma",
+  "si": "uptimekuma",
+  "x": 0,
+  "y": 0.96,
+  "w": 24,
+  "h": 22.09,
+  "aspect": 1.09,
+  "inkH": 18.4,
+  "coverage": 46.6
+ },
+ {
+  "tpl": "redis",
+  "si": "redis",
+  "x": 0,
+  "y": 0.93,
+  "w": 24,
+  "h": 22.15,
+  "aspect": 1.08,
+  "inkH": 18.5,
+  "coverage": 60.5
+ },
+ {
+  "tpl": "python-app",
+  "si": "python",
+  "x": -0.06,
+  "y": 0,
+  "w": 24.12,
+  "h": 24,
+  "aspect": 1.01,
+  "inkH": 20,
+  "coverage": 65
+ },
+ {
+  "tpl": "wordpress",
+  "si": "wordpress",
+  "x": 0,
+  "y": 0,
+  "w": 24,
+  "h": 24,
+  "aspect": 1,
+  "inkH": 20,
+  "coverage": 42.9
+ },
+ {
+  "tpl": "prometheus",
+  "si": "prometheus",
+  "x": 0,
+  "y": 0,
+  "w": 24,
+  "h": 24,
+  "aspect": 1,
+  "inkH": 20,
+  "coverage": 56.8
+ },
+ {
+  "tpl": "rabbitmq",
+  "si": "rabbitmq",
+  "x": 0,
+  "y": 0,
+  "w": 23.99,
+  "h": 24,
+  "aspect": 1,
+  "inkH": 20,
+  "coverage": 73.4
+ },
+ {
+  "tpl": "postgres",
+  "si": "postgresql",
+  "x": 0.42,
+  "y": 0,
+  "w": 23.17,
+  "h": 24,
+  "aspect": 0.97,
+  "inkH": 20,
+  "coverage": 24
+ },
+ {
+  "tpl": "grafana",
+  "si": "grafana",
+  "x": 0.95,
+  "y": 0,
+  "w": 22.09,
+  "h": 24,
+  "aspect": 0.92,
+  "inkH": 20,
+  "coverage": 43.7
+ },
+ {
+  "tpl": "node-app",
+  "si": "nodedotjs",
+  "x": 1.36,
+  "y": 0,
+  "w": 21.28,
+  "h": 24,
+  "aspect": 0.89,
+  "inkH": 20,
+  "coverage": 36.8
+ },
+ {
+  "tpl": "nginx",
+  "si": "nginx",
+  "x": 1.61,
+  "y": 0,
+  "w": 20.79,
+  "h": 24,
+  "aspect": 0.87,
+  "inkH": 20,
+  "coverage": 60.1
+ },
+ {
+  "tpl": "httpd",
+  "si": "apache",
+  "x": 5.21,
+  "y": 0,
+  "w": 13.59,
+  "h": 24,
+  "aspect": 0.57,
+  "inkH": 20,
+  "coverage": 27.3
+ },
+ {
+  "tpl": "minio",
+  "si": "minio",
+  "x": 5.76,
+  "y": 0,
+  "w": 12.49,
+  "h": 24,
+  "aspect": 0.52,
+  "inkH": 20,
+  "coverage": 26.5
+ },
+ {
+  "tpl": "mongodb",
+  "si": "mongodb",
+  "x": 6.61,
+  "y": 0,
+  "w": 10.78,
+  "h": 24,
+  "aspect": 0.45,
+  "inkH": 20,
+  "coverage": 61.6
+ }
+]

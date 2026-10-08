@@ -8,6 +8,7 @@ import { RowCapNotice } from '../components/RowCapNotice';
 import { useAuth } from '../hooks/useAuth';
 import { can } from '../lib/rbac';
 import { Icon } from '../components/Icons';
+import { TemplateLogo } from '../components/TemplateLogo';
 import {
   Banner,
   Button,
@@ -168,9 +169,7 @@ export function TemplatesPage() {
           {capped.visible.map((t) => (
             <div className="tpl-card" key={t.id}>
               <div className="tpl-head">
-                <span className="tpl-icon" aria-hidden="true">
-                  {t.icon}
-                </span>
+                <TemplateLogo slug={t.slug} spec={t.spec} fallback={t.icon} />
                 <div style={{ minWidth: 0 }}>
                   <div className="tpl-name truncate" title={t.name}>
                     {t.name}

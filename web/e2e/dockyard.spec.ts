@@ -81,6 +81,35 @@ test('renders every section with its heading, active nav and no console errors',
   expect(errors.filter((e) => !noise(e))).toEqual([]);
 });
 
+test('the templates page draws each product its own mark', async ({ page }) => {
+  await login(page, admin.email, admin.password);
+  await page.goto('/templates');
+  await expect(page.locator('.tpl-card').first()).toBeVisible();
+
+  // Read the card's own name element rather than filtering on page text: one
+  // product's description can mention another's name.
+  const cards = await page.locator('.tpl-card').evaluateAll((nodes) =>
+    nodes.map((node) => ({
+      name: node.querySelector('.tpl-name')?.textContent?.trim() ?? '',
+      fill: node.querySelector('svg.tpl-icon')?.getAttribute('fill') ?? null,
+    })),
+  );
+
+  const byName = new Map(cards.map((c) => [c.name, c.fill]));
+
+  // The point of the change: the card carries the product's real logo, in the
+  // product's own colour, rather than an emoji stand-in.
+  expect(byName.get('PostgreSQL')).toBe('#4169E1');
+  expect(byName.get('Redis')).toBe('#FF4438');
+  expect(byName.get('Grafana')).toBe('#F46800');
+  expect(byName.get('MongoDB')).toBe('#47A248');
+
+  // Every built-in template has one, and they are not a single shared token.
+  expect(cards.length).toBeGreaterThanOrEqual(15);
+  expect(cards.filter((c) => c.fill === null)).toEqual([]);
+  expect(new Set(cards.map((c) => c.fill)).size).toBeGreaterThan(10);
+});
+
 test('shows a 404 surface for an unknown route', async ({ page }) => {
   await login(page, admin.email, admin.password);
   await page.goto('/no-such-page');
