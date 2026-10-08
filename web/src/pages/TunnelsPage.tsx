@@ -135,8 +135,8 @@ export function TunnelsPage() {
             </Button>
           }
         >
-          A quick tunnel needs no Cloudflare account. A named tunnel gives you a stable hostname on your own
-          domain.
+          A quick or localtunnel tunnel needs no Cloudflare account. A named tunnel gives you a stable
+          hostname on your own domain.
         </EmptyState>
       ) : (
         <div className="table-wrap card">
