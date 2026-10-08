@@ -31,6 +31,7 @@ services:
       db:
         condition: service_healthy
     environment:
+      NODE_ENV: ${NODE_ENV:-production}
       PORT: 8190
       HOST: 0.0.0.0
       PUBLIC_URL: ${PUBLIC_URL:-http://localhost:8190}
@@ -47,6 +48,12 @@ services:
       DOCKYARD_ADMIN_PASSWORD: ${DOCKYARD_ADMIN_PASSWORD:-}
     extra_hosts:
       - "host.docker.internal:host-gateway"
+    # The socket is root:docker 0660 on a stock host, and the image runs as uid
+    # and gid 1001, so the panel cannot open it without being added to the
+    # host's docker group. Required, because a wrong guess fails at the first
+    # API call rather than at start-up.
+    group_add:
+      - "${DOCKER_GID:?set DOCKER_GID to the host docker group id: export DOCKER_GID=$(getent group docker | cut -d: -f3)}"
     ports:
       - "${PANEL_PORT:-8190}:8190"
     volumes:

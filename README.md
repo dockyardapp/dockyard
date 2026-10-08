@@ -37,8 +37,15 @@ npm --workspace web run dev
 ```bash
 export POSTGRES_PASSWORD="$(openssl rand -hex 16)"
 export SECRET_KEY="$(node -e 'console.log(require("crypto").randomBytes(32).toString("hex"))')"
+# The panel image runs as uid/gid 1001 and /var/run/docker.sock is root:docker
+# 0660, so it needs the host's docker group id to open the socket.
+export DOCKER_GID="$(getent group docker | cut -d: -f3)"
 docker compose up -d --build
 ```
+
+`PANEL_PORT` chooses the published port (default 8190); set it to 80 or 443 on a host with no
+reverse proxy in front. `PUBLIC_URL` should match whatever you publish, because the UI uses it for
+the links it shows.
 
 The compose file mounts `/var/run/docker.sock` into the panel and sets
 `TUNNEL_TARGET_HOST=host.docker.internal` so tunnels can reach containers' published ports from
