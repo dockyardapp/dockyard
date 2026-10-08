@@ -68,7 +68,11 @@ export function LoginPage() {
               : 'Use your Dockyard account to reach the console.'}
           </p>
 
-          {error ? <Banner tone="error" title="Sign in failed">{error}</Banner> : null}
+          {error ? (
+            <Banner tone="error" title={mode === 'bootstrap' ? 'Could not create the account' : 'Sign in failed'}>
+              {error}
+            </Banner>
+          ) : null}
 
           <form onSubmit={submit} noValidate>
             <TextField

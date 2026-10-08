@@ -54,6 +54,20 @@ test('signs in through the real form and lands on the dashboard', async ({ page 
   await expect(page.locator('.nav-item.active')).toHaveText('Dashboard');
 });
 
+test('the first-run form reports its own failures, not sign-in ones', async ({ page }) => {
+  await page.goto('/login');
+  await page.getByRole('button', { name: /admin account/i }).click();
+  await expect(page.getByRole('heading', { level: 1 })).toHaveText('Create the first administrator');
+  await expect(page.getByText(/at least 8 characters/i)).toBeVisible();
+
+  // A short password is refused before a request is made.
+  await page.getByLabel('Email').fill('someone@dockyard.test');
+  await page.getByLabel('Password').fill('abc');
+  await page.getByRole('button', { name: /create account/i }).click();
+  await expect(page.getByText('Could not create the account')).toBeVisible();
+  await expect(page.getByText('Sign in failed')).toHaveCount(0);
+});
+
 test('renders every section with its heading, active nav and no console errors', async ({ page }) => {
   const errors = collectConsoleErrors(page);
   await login(page, admin.email, admin.password);
