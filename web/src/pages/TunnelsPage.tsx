@@ -505,7 +505,7 @@ function CreateTunnelDrawer({
           mode === 'quick'
             ? 'Quick tunnels need no Cloudflare account. The URL changes each time.'
             : mode === 'localtunnel'
-              ? 'LocalTunnel needs no account either, and is the quickest to set up. The URL is assigned by localtunnel.me and changes each time.'
+              ? 'LocalTunnel needs no account either, and is the quickest to set up. The URL is assigned by localtunnel.me and changes each time. A browser visitor is shown a localtunnel.me reminder page once and has to enter this host\'s public IP to continue.'
               : 'Named tunnels use your Cloudflare account and keep a stable hostname.'
         }
       >

@@ -187,6 +187,17 @@ the URL and it changes on every start. The tunnel name is offered as a subdomain
 sometimes lands on the same URL. The client is a library rather than a child process, so the panel
 opens the tunnel in-process and the tunnel has no pid.
 
+Two things to know before handing a `*.loca.lt` URL to someone:
+
+- A browser visitor is shown a localtunnel.me reminder page before the target loads, and has to
+  enter the tunnel host's **public IP** to continue. The page appears once per visitor IP every
+  7 days, and it displays that public IP to the visitor. Plain HTTP clients (curl, webhooks, API
+  callers) are not gated and get the target straight away.
+- It is a third-party service, so a loca.lt URL is only as available as localtunnel.me is.
+
+Use quick or named when the link is going to a person; localtunnel suits machine-to-machine access
+where nobody has to click through.
+
 Named tunnels need an API token with `Account: Cloudflare Tunnel:Edit` and `Zone:DNS:Edit`. Add it
 in **Settings** (stored AES-256-GCM encrypted in the `settings` table) or via
 `CLOUDFLARE_API_TOKEN` / `CLOUDFLARE_ACCOUNT_ID`. The token is never returned by the API and never
