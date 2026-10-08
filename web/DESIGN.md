@@ -298,6 +298,17 @@ signals element size rather than adding decoration.
   (Adminer is the one such mark, `#34567C` to `#3d6692`) and flagged `adjusted` in
   `templateLogos.ts`. Templates with no mark fall back to their own `icon`, and the mark is
   `aria-hidden` because the name beside it already says which product it is.
+- **tunnel-guide:** the reference tab on the Tunnels page, beside the list. It explains what a tunnel
+  does, compares the three exposure modes and says which to reach for. Reference material is the
+  easiest place to import furniture from somewhere else, so it uses only what the page already owns:
+  `card` sections, `table.data` for the mode comparison, and `kv` rows for the when-to-use, status and
+  caveat lists. The app has no bullet-list style, so the caveats are `dt`/`dd` rows rather than a `ul`.
+  Two details are load-bearing:
+  - The comparison is keyed by `TunnelMode` in code, not positional and not by the modes the
+    guide happens to render, so adding an exposure mode to the API fails the build until the guide
+    answers for it. A guide that silently omits a mode is worse than no guide.
+  - The tab lives in the URL (`?tab=how`), like the container detail tabs, so it survives a reload and
+    can be linked to.
 
 ## Long lists
 

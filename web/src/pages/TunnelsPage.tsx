@@ -1,5 +1,5 @@
 import { useMemo, useState } from 'react';
-import { Link } from 'react-router-dom';
+import { Link, useSearchParams } from 'react-router-dom';
 import { endpoints, errorMessage } from '../api/client';
 import type {
   CloudflareStatus,
@@ -26,10 +26,19 @@ import {
   PageHead,
   Pill,
   SkeletonRows,
+  Tabs,
   TextField,
   useConfirm,
 } from '../components/ui';
+import { TunnelModesGuide } from '../components/TunnelModesGuide';
 import { formatDateTime, pluralize } from '../lib/format';
+
+type TunnelTab = 'tunnels' | 'how';
+
+const TABS: Array<{ id: TunnelTab; label: string }> = [
+  { id: 'tunnels', label: 'Tunnels' },
+  { id: 'how', label: 'How it works' },
+];
 
 export function TunnelsPage() {
   const { user } = useAuth();
@@ -37,6 +46,11 @@ export function TunnelsPage() {
   const canWrite = can.write(user?.role);
   const canDestroy = can.destroy(user?.role);
   const isAdmin = can.manageSettings(user?.role);
+
+  // The tab lives in the URL, like the container detail tabs, so it survives a reload
+  // and can be linked to.
+  const [params, setParams] = useSearchParams();
+  const tab = (params.get('tab') as TunnelTab) || 'tunnels';
 
   const [pending, setPending] = useState<Record<string, boolean>>({});
   const [error, setError] = useState<string | null>(null);
@@ -95,7 +109,7 @@ export function TunnelsPage() {
     <>
       <PageHead
         title="Tunnels"
-        desc={list.data ? pluralize(list.data.length, 'tunnel') : 'Expose containers and URLs through Cloudflare'}
+        desc={list.data ? pluralize(list.data.length, 'tunnel') : 'Expose a container or a URL beyond this host'}
         actions={
           <>
             <Button icon="refresh" busy={list.refreshing} onClick={() => void list.refresh()}>
@@ -108,137 +122,149 @@ export function TunnelsPage() {
         }
       />
 
-      {error ? (
-        <Banner tone="error" title="Tunnel action failed" onDismiss={() => setError(null)}>
-          {error}
-        </Banner>
-      ) : null}
-      {list.error ? (
-        <Banner tone="error" title="Could not load tunnels" onDismiss={() => void list.refresh()}>
-          {errorMessage(list.error)}
-        </Banner>
-      ) : null}
+      <Tabs
+        tabs={TABS}
+        value={tab}
+        onChange={(next) => setParams(next === 'tunnels' ? {} : { tab: next }, { replace: true })}
+      />
 
-      {isAdmin ? <CloudflarePanel status={cf.data} loading={cf.loading} error={cf.error} onChanged={() => void cf.refresh()} /> : null}
+      {tab === 'how' ? <TunnelModesGuide /> : null}
 
-      {list.loading && !list.data ? (
-        <Card>
-          <SkeletonRows rows={4} cols={5} />
-        </Card>
-      ) : (list.data ?? []).length === 0 ? (
-        <EmptyState
-          icon="tunnel"
-          title="No tunnels yet"
-          action={
-            <Button variant="primary" icon="plus" disabled={!canWrite} onClick={() => setCreateOpen(true)}>
-              Create a tunnel
-            </Button>
-          }
-        >
-          A quick or localtunnel tunnel needs no Cloudflare account. A named tunnel gives you a stable
-          hostname on your own domain.
-        </EmptyState>
-      ) : (
-        <div className="table-wrap card">
-          <table className="data">
-            <thead>
-              <tr>
-                <th>Name</th>
-                <th>Mode</th>
-                <th>Target</th>
-                <th>Status</th>
-                <th>URL</th>
-                <th className="num">Actions</th>
-              </tr>
-            </thead>
-            <tbody>
-              {capped.visible.map((t) => (
-                <tr key={t.id}>
-                  <td className="primary" data-label="Name">
-                    {t.name}
-                    {t.auto_start ? <div className="dim" style={{ fontSize: 'var(--fs-micro)' }}>auto-start</div> : null}
-                  </td>
-                  <td data-label="Mode">
-                    <span className="tag">{t.mode}</span>
-                  </td>
-                  <td className="mono-cell" data-label="Target">
-                    <div className="stack" style={{ gap: 2 }}>
-                      <span className="truncate" title={t.target_url}>{t.target_url}</span>
-                      {t.container_name ? (
-                        <span className="dim">
-                          {t.container_id ? <Link to={`/containers/${t.container_id}`}>{t.container_name}</Link> : t.container_name}
-                          {t.port ? ` :${t.port}` : ''}
-                        </span>
-                      ) : null}
-                    </div>
-                  </td>
-                  <td data-label="Status">
-                    <Pill state={t.status} />
-                    {t.last_error ? (
-                      <div className="dim" style={{ fontSize: 'var(--fs-micro)', maxWidth: 220 }} title={t.last_error}>
-                        <span className="truncate">{t.last_error}</span>
-                      </div>
-                    ) : null}
-                  </td>
-                  <td data-label="URL">
-                    {t.url ? (
-                      <span className="row" style={{ gap: 'var(--space-2)' }}>
-                        <a href={t.url} target="_blank" rel="noreferrer" className="mono-cell">
-                          {t.url}
-                        </a>
-                        <CopyButton value={t.url} label="Copy tunnel URL" />
-                      </span>
-                    ) : (
-                      <span className="dim">{t.status === 'starting' ? 'assigning' : 'not assigned'}</span>
-                    )}
-                    {t.hostname ? <div className="mono-cell dim">{t.hostname}</div> : null}
-                  </td>
-                  <td className="cell-actions" data-label="Actions">
-                    {t.status === 'running' || t.status === 'starting' ? (
-                      <Button
-                        size="sm"
-                        icon="stop"
-                        disabled={!canWrite || pending[`${t.id}:stop`]}
-                        busy={pending[`${t.id}:stop`]}
-                        onClick={() => void runAction(t.id, 'stop')}
-                      >
-                        Stop
-                      </Button>
-                    ) : (
-                      <Button
-                        size="sm"
-                        icon="play"
-                        disabled={!canWrite || pending[`${t.id}:start`]}
-                        busy={pending[`${t.id}:start`]}
-                        onClick={() => void runAction(t.id, 'start')}
-                      >
-                        Start
-                      </Button>
-                    )}
-                    <Button
-                      size="sm"
-                      variant="danger"
-                      icon="trash"
-                      disabled={!canDestroy || pending[`${t.id}:remove`]}
-                      busy={pending[`${t.id}:remove`]}
-                      title={canDestroy ? 'Delete tunnel' : 'Requires the admin role'}
-                      onClick={() => void removeTunnel(t)}
-                    >
-                      Delete
-                    </Button>
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-          <RowCapNotice
-            hidden={capped.hiddenCount}
-            total={tunnels.length}
-            noun="tunnels"
-            onShowAll={capped.showAll}
-          />
-        </div>
-      )}
+      {tab === 'tunnels' ? (
+        <>
+          {error ? (
+            <Banner tone="error" title="Tunnel action failed" onDismiss={() => setError(null)}>
+              {error}
+            </Banner>
+          ) : null}
+          {list.error ? (
+            <Banner tone="error" title="Could not load tunnels" onDismiss={() => void list.refresh()}>
+              {errorMessage(list.error)}
+            </Banner>
+          ) : null}
+
+          {isAdmin ? <CloudflarePanel status={cf.data} loading={cf.loading} error={cf.error} onChanged={() => void cf.refresh()} /> : null}
+
+          {list.loading && !list.data ? (
+            <Card>
+              <SkeletonRows rows={4} cols={5} />
+            </Card>
+          ) : (list.data ?? []).length === 0 ? (
+            <EmptyState
+              icon="tunnel"
+              title="No tunnels yet"
+              action={
+                <Button variant="primary" icon="plus" disabled={!canWrite} onClick={() => setCreateOpen(true)}>
+                  Create a tunnel
+                </Button>
+              }
+            >
+              A quick or localtunnel tunnel needs no Cloudflare account. A named tunnel gives you a stable
+              hostname on your own domain.
+            </EmptyState>
+          ) : (
+            <div className="table-wrap card">
+              <table className="data">
+                <thead>
+                  <tr>
+                    <th>Name</th>
+                    <th>Mode</th>
+                    <th>Target</th>
+                    <th>Status</th>
+                    <th>URL</th>
+                    <th className="num">Actions</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {capped.visible.map((t) => (
+                    <tr key={t.id}>
+                      <td className="primary" data-label="Name">
+                        {t.name}
+                        {t.auto_start ? <div className="dim" style={{ fontSize: 'var(--fs-micro)' }}>auto-start</div> : null}
+                      </td>
+                      <td data-label="Mode">
+                        <span className="tag">{t.mode}</span>
+                      </td>
+                      <td className="mono-cell" data-label="Target">
+                        <div className="stack" style={{ gap: 2 }}>
+                          <span className="truncate" title={t.target_url}>{t.target_url}</span>
+                          {t.container_name ? (
+                            <span className="dim">
+                              {t.container_id ? <Link to={`/containers/${t.container_id}`}>{t.container_name}</Link> : t.container_name}
+                              {t.port ? ` :${t.port}` : ''}
+                            </span>
+                          ) : null}
+                        </div>
+                      </td>
+                      <td data-label="Status">
+                        <Pill state={t.status} />
+                        {t.last_error ? (
+                          <div className="dim" style={{ fontSize: 'var(--fs-micro)', maxWidth: 220 }} title={t.last_error}>
+                            <span className="truncate">{t.last_error}</span>
+                          </div>
+                        ) : null}
+                      </td>
+                      <td data-label="URL">
+                        {t.url ? (
+                          <span className="row" style={{ gap: 'var(--space-2)' }}>
+                            <a href={t.url} target="_blank" rel="noreferrer" className="mono-cell">
+                              {t.url}
+                            </a>
+                            <CopyButton value={t.url} label="Copy tunnel URL" />
+                          </span>
+                        ) : (
+                          <span className="dim">{t.status === 'starting' ? 'assigning' : 'not assigned'}</span>
+                        )}
+                        {t.hostname ? <div className="mono-cell dim">{t.hostname}</div> : null}
+                      </td>
+                      <td className="cell-actions" data-label="Actions">
+                        {t.status === 'running' || t.status === 'starting' ? (
+                          <Button
+                            size="sm"
+                            icon="stop"
+                            disabled={!canWrite || pending[`${t.id}:stop`]}
+                            busy={pending[`${t.id}:stop`]}
+                            onClick={() => void runAction(t.id, 'stop')}
+                          >
+                            Stop
+                          </Button>
+                        ) : (
+                          <Button
+                            size="sm"
+                            icon="play"
+                            disabled={!canWrite || pending[`${t.id}:start`]}
+                            busy={pending[`${t.id}:start`]}
+                            onClick={() => void runAction(t.id, 'start')}
+                          >
+                            Start
+                          </Button>
+                        )}
+                        <Button
+                          size="sm"
+                          variant="danger"
+                          icon="trash"
+                          disabled={!canDestroy || pending[`${t.id}:remove`]}
+                          busy={pending[`${t.id}:remove`]}
+                          title={canDestroy ? 'Delete tunnel' : 'Requires the admin role'}
+                          onClick={() => void removeTunnel(t)}
+                        >
+                          Delete
+                        </Button>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+              <RowCapNotice
+                hidden={capped.hiddenCount}
+                total={tunnels.length}
+                noun="tunnels"
+                onShowAll={capped.showAll}
+              />
+            </div>
+          )}
+        </>
+      ) : null}
 
       <CreateTunnelDrawer
         open={createOpen}

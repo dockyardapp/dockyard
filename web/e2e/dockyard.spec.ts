@@ -264,6 +264,36 @@ test('container exec is off by default and an admin can turn it on', async ({
   }
 });
 
+test('the tunnels page explains the modes on its own tab', async ({ page }) => {
+  await login(page, admin.email, admin.password);
+  await page.goto('/tunnels');
+
+  // The list is the default surface.
+  await expect(page.getByRole('tab', { name: 'Tunnels' })).toHaveAttribute('aria-selected', 'true');
+
+  await page.getByRole('tab', { name: 'How it works' }).click();
+  await expect(page).toHaveURL(/tab=how/);
+
+  // Every mode gets a column, and the guidance covers when to use each one.
+  const guide = page.locator('table.data').first();
+  for (const mode of ['quick', 'named', 'localtunnel']) {
+    await expect(guide.getByRole('columnheader', { name: mode })).toBeVisible();
+  }
+  await expect(page.getByText(/adds no authentication of its own/i)).toBeVisible();
+
+  // The tab is in the URL, so a reload keeps it.
+  await page.reload();
+  await expect(page.getByRole('tab', { name: 'How it works' })).toHaveAttribute(
+    'aria-selected',
+    'true',
+  );
+
+  // And back to the list, which drops the parameter.
+  await page.getByRole('tab', { name: 'Tunnels' }).click();
+  await expect(page).not.toHaveURL(/tab=how/);
+  await expect(page.getByRole('button', { name: 'Create tunnel' })).toBeVisible();
+});
+
 test('the create-tunnel dialog offers localtunnel, which needs no Cloudflare account', async ({
   page,
 }) => {
