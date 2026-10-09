@@ -9,6 +9,13 @@ import path from 'node:path';
 import crypto from 'node:crypto';
 import { fileURLToPath } from 'node:url';
 
+/**
+ * The public template repository the panel pulls from. It is a *default*, not a hard dependency:
+ * setting DOCKYARD_TEMPLATES_REPO to an empty string switches the whole remote source off, and an
+ * install that cannot reach the network keeps working off the built-in catalog.
+ */
+export const DEFAULT_TEMPLATES_REPO = 'EliasL-git/dockyard-templates';
+
 export type Config = {
   env: 'development' | 'production' | 'test';
   port: number;
@@ -27,6 +34,21 @@ export type Config = {
    * by dropping a file on the host rather than rebuilding the image.
    */
   templateDir: string;
+  /**
+   * A public repository of template files, pulled over the network into `templateRemoteDir` and
+   * reconciled like local files. Empty disables the whole remote source, which is the right
+   * default for an install that wants nothing fetched at runtime.
+   */
+  templatesRepo: string;
+  templatesBranch: string;
+  templateRemoteDir: string;
+  /** How long a successful pull is trusted before the next read refreshes it. */
+  templatesRefreshMinutes: number;
+  /** Overridable so a test can serve the "GitHub" API from localhost. */
+  templatesApiBase: string;
+  templatesRawBase: string;
+  /** Optional. Only raises the anonymous rate limit; the repository is public. */
+  templatesToken: string;
   cloudflareApiToken: string;
   cloudflareAccountId: string;
   secretKey: string; // 64 hex chars
@@ -164,6 +186,11 @@ function buildConfig(): Config {
   const dataDir = resolveDir(process.env.DOCKYARD_DATA_DIR ?? process.env.DATA_DIR, 'data');
   const tunnelDataDir = resolveDir(process.env.TUNNEL_DATA_DIR, path.join('data', 'tunnels'));
   const templateDir = resolveDir(process.env.DOCKYARD_TEMPLATE_DIR, path.join('data', 'templates'));
+  const templatesRepo = (process.env.DOCKYARD_TEMPLATES_REPO ?? DEFAULT_TEMPLATES_REPO).trim();
+  const templateRemoteDir = resolveDir(
+    process.env.DOCKYARD_TEMPLATES_DIR,
+    path.join('data', 'templates-remote'),
+  );
 
   return {
     env,
@@ -178,6 +205,13 @@ function buildConfig(): Config {
     tunnelDataDir,
     dataDir,
     templateDir,
+    templatesRepo,
+    templatesBranch: (process.env.DOCKYARD_TEMPLATES_BRANCH ?? 'main').trim(),
+    templateRemoteDir,
+    templatesRefreshMinutes: positiveInt(process.env.DOCKYARD_TEMPLATES_REFRESH_MINUTES, 15),
+    templatesApiBase: (process.env.DOCKYARD_TEMPLATES_API_BASE ?? 'https://api.github.com').replace(/\/+$/, ''),
+    templatesRawBase: (process.env.DOCKYARD_TEMPLATES_RAW_BASE ?? 'https://raw.githubusercontent.com').replace(/\/+$/, ''),
+    templatesToken: (process.env.DOCKYARD_TEMPLATES_TOKEN ?? '').trim(),
     cloudflareApiToken: (process.env.CLOUDFLARE_API_TOKEN ?? '').trim(),
     cloudflareAccountId: (process.env.CLOUDFLARE_ACCOUNT_ID ?? '').trim(),
     secretKey,

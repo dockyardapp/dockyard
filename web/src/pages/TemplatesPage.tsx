@@ -7,6 +7,7 @@ import type {
   TemplateCategory,
   TemplateFileSync,
   TemplateFilesStatus,
+  TemplateRemoteStatus,
   TemplateSource,
   TemplateSpec,
 } from '../api/types';
@@ -57,8 +58,9 @@ export function TemplatesPage() {
   const [error, setError] = useState<string | null>(null);
   const [reloadNote, setReloadNote] = useState<string | null>(null);
   const [reloadingFiles, setReloadingFiles] = useState(false);
+  const [pullingRemote, setPullingRemote] = useState(false);
 
-  const canReloadFiles = atLeast(user?.role, 'admin');
+  const canManageSources = atLeast(user?.role, 'admin');
 
   const list = usePolling<Template[]>(() => endpoints.templates.list(), { intervalMs: 60000 });
   const files = usePolling<TemplateFilesStatus>(() => endpoints.templates.files(), { intervalMs: 120000 });
@@ -75,6 +77,23 @@ export function TemplatesPage() {
       setError(errorMessage(err));
     } finally {
       setReloadingFiles(false);
+    }
+  };
+
+  const pullRemote = async () => {
+    setPullingRemote(true);
+    setError(null);
+    setReloadNote(null);
+    try {
+      const { pull, reconcile } = await endpoints.templates.pullRemote();
+      await Promise.all([files.refresh(), list.refresh()]);
+      // A failed pull still returns 200: the cached copy keeps being served, so report the failure
+      // rather than a count of what did not change.
+      setReloadNote(pull.stale ? pull.message : describeSync(reconcile));
+    } catch (err) {
+      setError(errorMessage(err));
+    } finally {
+      setPullingRemote(false);
     }
   };
 
@@ -143,7 +162,7 @@ export function TemplatesPage() {
         </Banner>
       ) : null}
       {reloadNote ? (
-        <Banner tone="info" title="Template files reloaded" onDismiss={() => setReloadNote(null)}>
+        <Banner tone="info" title="Template sources updated" onDismiss={() => setReloadNote(null)}>
           {reloadNote}
         </Banner>
       ) : null}
@@ -164,6 +183,7 @@ export function TemplatesPage() {
           <option value="all">all sources</option>
           <option value="builtin">built-in</option>
           <option value="file">from a file</option>
+          <option value="remote">from the repo</option>
           <option value="user">user</option>
         </select>
         <input
@@ -216,6 +236,11 @@ export function TemplatesPage() {
                         from a file
                       </span>
                     ) : null}
+                    {t.source === 'remote' ? (
+                      <span className="tag" title="Pulled from the template repository">
+                        from the repo
+                      </span>
+                    ) : null}
                   </div>
                 </div>
               </div>
@@ -258,13 +283,15 @@ export function TemplatesPage() {
         onShowAll={capped.showAll}
       />
 
-      <TemplateFilesCard
+      <TemplateSourcesCard
         status={files.data}
         loading={files.loading && !files.data}
         error={files.error}
-        canReload={canReloadFiles}
+        canManage={canManageSources}
         reloading={reloadingFiles}
+        pulling={pullingRemote}
         onReload={() => void reloadFiles()}
+        onPull={() => void pullRemote()}
       />
 
       {active ? (
@@ -291,7 +318,7 @@ export function TemplatesPage() {
   );
 }
 
-/* ---------------------------------------------------------- template files card */
+/* -------------------------------------------------------- template sources card */
 
 /**
  * A plain-language summary of what a reconcile did, used for the banner after a manual reload and
@@ -312,111 +339,226 @@ function describeSync(report: TemplateFileSync): string {
     : `Read ${files} holding ${templates}: ${parts.join(', ')}.`;
 }
 
-function TemplateFilesCard({
+function when(iso: string | null | undefined): string {
+  if (!iso) return 'never';
+  const d = new Date(iso);
+  return Number.isNaN(d.getTime()) ? iso : d.toLocaleString();
+}
+
+/** The repository half of the card: what is being pulled, and what came of the last pull. */
+function TemplateRepoSection({
+  remote,
+  canPull,
+  pulling,
+  onPull,
+}: {
+  remote: TemplateRemoteStatus | null | undefined;
+  canPull: boolean;
+  pulling: boolean;
+  onPull: () => void;
+}) {
+  if (!remote) return null;
+
+  if (!remote.enabled) {
+    return (
+      <p className="dim" style={{ fontSize: 'var(--fs-xs)', marginTop: 0 }}>
+        No template repository is configured. Set <code>DOCKYARD_TEMPLATES_REPO</code> to pull
+        templates from one.
+      </p>
+    );
+  }
+
+  const pull = remote.pull;
+
+  return (
+    <>
+      <p className="dim" style={{ fontSize: 'var(--fs-xs)', marginTop: 0 }}>
+        Templates are also pulled from{' '}
+        <a href={`https://github.com/${remote.repo}`} target="_blank" rel="noreferrer">
+          {remote.repo}
+        </a>{' '}
+        on <code>{remote.branch}</code>, refreshed at most every {remote.refreshMinutes} minutes. A
+        template pushed there appears here on the next refresh, or immediately with Pull now. Your
+        own files and anything you edited here always win over the repository copy.
+      </p>
+
+      <dl className="kv">
+        <dt>Repository</dt>
+        <dd className="mono-cell">{remote.repo}</dd>
+        <dt>Branch</dt>
+        <dd className="mono-cell">{remote.branch}</dd>
+        <dt>Loaded from it</dt>
+        <dd>
+          {remote.cached} {remote.cached === 1 ? 'template' : 'templates'}
+        </dd>
+        <dt>Last pull</dt>
+        <dd>
+          {when(pull?.at)}
+          {pull?.commit ? <span className="mono-cell"> at {pull.commit.slice(0, 7)}</span> : null}
+        </dd>
+      </dl>
+
+      {pull?.stale ? (
+        <Banner tone="warn" title="The last pull failed, so the cached copy is still in use">
+          {pull.message}
+        </Banner>
+      ) : null}
+
+      {remote.errors.length > 0 ? (
+        <Banner tone="error" title="Some files from the repository were rejected">
+          <div className="stack" style={{ gap: 2 }}>
+            {remote.errors.map((entry) => (
+              <span key={entry.file} className="mono-cell" style={{ fontSize: 'var(--fs-micro)' }}>
+                {entry.file}: {entry.errors.join('; ')}
+              </span>
+            ))}
+          </div>
+        </Banner>
+      ) : null}
+
+      <div className="row" style={{ gap: 'var(--space-2)', marginTop: 'var(--space-3)' }}>
+        <Button size="sm" icon="refresh" busy={pulling} disabled={!canPull} onClick={onPull}>
+          Pull now
+        </Button>
+        <span className="dim" style={{ fontSize: 'var(--fs-micro)' }}>
+          Fetches the repository and reconciles straight away, ignoring the refresh window.
+        </span>
+      </div>
+    </>
+  );
+}
+
+function TemplateSourcesCard({
   status,
   loading,
   error,
-  canReload,
+  canManage,
   reloading,
+  pulling,
   onReload,
+  onPull,
 }: {
   status: TemplateFilesStatus | null | undefined;
   loading: boolean;
   error: unknown;
-  canReload: boolean;
+  canManage: boolean;
   reloading: boolean;
+  pulling: boolean;
   onReload: () => void;
+  onPull: () => void;
 }) {
+  const remote = status?.remote;
+
   return (
     <div style={{ marginTop: 'var(--space-5)' }}>
       <Card
-        title="Template files"
+        title="Template sources"
         actions={
-          <Button size="sm" icon="refresh" busy={reloading} disabled={!canReload} onClick={onReload}>
-            Reload files
-          </Button>
+          <>
+            <Button size="sm" icon="refresh" busy={pulling} disabled={!canManage || !remote?.enabled} onClick={onPull}>
+              Pull now
+            </Button>
+            <Button size="sm" icon="refresh" busy={reloading} disabled={!canManage} onClick={onReload}>
+              Reload files
+            </Button>
+          </>
         }
       >
-        <p className="dim" style={{ fontSize: 'var(--fs-xs)', marginTop: 0 }}>
-          Templates can also come from JSON files. Put a <code>*.json</code> file in{' '}
-          <code>{status?.dir ?? 'the template directory'}</code> and it appears in the list above
-          with no rebuild and no restart. One file can hold a single template, an array of them, or{' '}
-          <code>{'{ "templates": [ ... ] }'}</code>. Naming a file with a leading <code>.</code> or{' '}
-          <code>_</code> parks it, so it is ignored but kept.
-        </p>
-
         {error ? (
-          <Banner tone="error" title="Could not read the template directory">
+          <Banner tone="error" title="Could not read the template sources">
             {errorMessage(error)}
           </Banner>
         ) : loading ? (
-          <SkeletonRows rows={2} cols={3} />
-        ) : !status ? null : !status.exists ? (
-          <Banner tone="warn" title="The template directory does not exist">
-            Create <code>{status.dir}</code> and put a template file in it. In a Compose deployment
-            that is the <code>data/templates</code> folder next to the compose file.
-          </Banner>
-        ) : status.entries.length === 0 ? (
-          <p className="dim" style={{ fontSize: 'var(--fs-xs)', marginBottom: 0 }}>
-            No template files in <code>{status.dir}</code> yet.
-          </p>
-        ) : (
-          <div className="table-wrap">
-            <table className="data">
-              <thead>
-                <tr>
-                  <th>File</th>
-                  <th>Templates</th>
-                  <th>Status</th>
-                </tr>
-              </thead>
-              <tbody>
-                {status.entries.map((entry) => (
-                  <tr key={entry.file}>
-                    <td className="mono-cell">{entry.file}</td>
-                    <td className="mono-cell">
-                      {entry.templates.length > 0 ? entry.templates.join(', ') : '-'}
-                    </td>
-                    <td>
-                      {entry.errors.length === 0 ? (
-                        <span className="pill pill-running">loaded</span>
-                      ) : (
-                        <span className="pill pill-error">error</span>
-                      )}
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        )}
+          <SkeletonRows rows={3} cols={3} />
+        ) : !status ? null : (
+          <>
+            <h3 style={{ marginTop: 0 }}>Template repository</h3>
+            <TemplateRepoSection remote={remote} canPull={canManage} pulling={pulling} onPull={onPull} />
 
-        {status && status.errors.length > 0 ? (
-          <div style={{ marginTop: 'var(--space-3)' }}>
-            <Banner tone="error" title="Some files were rejected">
-              <div className="stack" style={{ gap: 2 }}>
-                {status.errors.map((entry) => (
-                  <span key={entry.file} className="mono-cell" style={{ fontSize: 'var(--fs-micro)' }}>
-                    {entry.file}: {entry.errors.join('; ')}
-                  </span>
-                ))}
+            <h3 style={{ marginTop: 'var(--space-5)' }}>Local files</h3>
+            <p className="dim" style={{ fontSize: 'var(--fs-xs)', marginTop: 0 }}>
+              Templates can also come from JSON files. Put a <code>*.json</code> file in{' '}
+              <code>{status.dir}</code> and it appears in the list above with no rebuild and no
+              restart. One file can hold a single template, an array of them, or{' '}
+              <code>{'{ "templates": [ ... ] }'}</code>. Naming a file with a leading <code>.</code>{' '}
+              or <code>_</code> parks it, so it is ignored but kept. A local file overrides a
+              template of the same name from the repository.
+            </p>
+
+            {!status.exists ? (
+              <Banner tone="warn" title="The template directory does not exist">
+                Create <code>{status.dir}</code> and put a template file in it. In a Compose
+                deployment that is the <code>data/templates</code> folder next to the compose file.
+              </Banner>
+            ) : status.entries.length === 0 ? (
+              <p className="dim" style={{ fontSize: 'var(--fs-xs)', marginBottom: 0 }}>
+                No template files in <code>{status.dir}</code> yet.
+              </p>
+            ) : (
+              <div className="table-wrap">
+                <table className="data">
+                  <thead>
+                    <tr>
+                      <th>File</th>
+                      <th>Templates</th>
+                      <th>Status</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {status.entries.map((entry) => (
+                      <tr key={entry.file}>
+                        <td className="mono-cell">{entry.file}</td>
+                        <td className="mono-cell">
+                          {entry.templates.length > 0 ? entry.templates.join(', ') : '-'}
+                        </td>
+                        <td>
+                          {entry.errors.length === 0 ? (
+                            <span className="pill pill-running">loaded</span>
+                          ) : (
+                            <span className="pill pill-error">error</span>
+                          )}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
               </div>
-            </Banner>
-          </div>
-        ) : null}
+            )}
 
-        {status && status.parked.length > 0 ? (
-          <p className="dim" style={{ fontSize: 'var(--fs-micro)', marginBottom: 0 }}>
-            Parked: <code>{status.parked.join(', ')}</code>
-          </p>
-        ) : null}
+            {status.errors.length > 0 ? (
+              <div style={{ marginTop: 'var(--space-3)' }}>
+                <Banner tone="error" title="Some files were rejected">
+                  <div className="stack" style={{ gap: 2 }}>
+                    {status.errors.map((entry) => (
+                      <span key={entry.file} className="mono-cell" style={{ fontSize: 'var(--fs-micro)' }}>
+                        {entry.file}: {entry.errors.join('; ')}
+                      </span>
+                    ))}
+                  </div>
+                </Banner>
+              </div>
+            ) : null}
 
-        {status?.lastSync ? (
-          <p className="dim" style={{ fontSize: 'var(--fs-micro)', marginBottom: 0 }}>
-            Last reconcile at {new Date(status.lastSync.at).toLocaleTimeString()}.{' '}
-            {describeSync(status.lastSync)}
-          </p>
-        ) : null}
+            {status.parked.length > 0 ? (
+              <p className="dim" style={{ fontSize: 'var(--fs-micro)', marginBottom: 0 }}>
+                Parked: <code>{status.parked.join(', ')}</code>
+              </p>
+            ) : null}
+
+            {status.lastSync ? (
+              <p className="dim" style={{ fontSize: 'var(--fs-micro)', marginBottom: 0 }}>
+                Last local reconcile at {when(status.lastSync.at)}. {describeSync(status.lastSync)}
+              </p>
+            ) : null}
+
+            {remote?.lastSync ? (
+              <p className="dim" style={{ fontSize: 'var(--fs-micro)', marginBottom: 0 }}>
+                Last repository reconcile at {when(remote.lastSync.at)}.{' '}
+                {describeSync(remote.lastSync)}
+              </p>
+            ) : null}
+          </>
+        )}
       </Card>
     </div>
   );

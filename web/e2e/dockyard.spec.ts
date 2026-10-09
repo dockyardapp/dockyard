@@ -185,11 +185,14 @@ test('a template file on disk shows up without a restart, and a bad one is repor
     await expect(card).toBeVisible();
     await expect(card.locator('.tag', { hasText: 'from a file' })).toBeVisible();
 
-    // The files card names the file and lists the template it produced.
-    const filesCard = page.locator('.card', { hasText: 'Template files' });
+    // The sources card names the file and lists the template it produced.
+    const filesCard = page.locator('.card', { hasText: 'Template sources' });
     const goodRow = filesCard.locator('tbody tr', { hasText: `${slug}.json` });
     await expect(goodRow).toContainText(slug);
     await expect(goodRow.locator('.pill')).toHaveText('loaded');
+
+    // The repository half of the card is present and says it is switched off in this suite.
+    await expect(filesCard).toContainText('No template repository is configured');
 
     // The source filter knows about the new value.
     await page.selectOption('select[aria-label="Filter by source"]', 'file');
@@ -200,7 +203,7 @@ test('a template file on disk shows up without a restart, and a bad one is repor
     await page.reload();
 
     const badRow = page
-      .locator('.card', { hasText: 'Template files' })
+      .locator('.card', { hasText: 'Template sources' })
       .locator('tbody tr', { hasText: `${slug}-broken.json` });
     await expect(badRow.locator('.pill')).toHaveText('error');
     await expect(page.locator('.tpl-card', { hasText: 'Dropped in by a test' })).toBeVisible();

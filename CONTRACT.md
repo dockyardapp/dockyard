@@ -387,8 +387,9 @@ The first user created is `admin`.
 | PATCH | `/api/templates/:slug` | `{spec}` | `Template` | operator |
 | DELETE | `/api/templates/:slug` | – | `{ok:true}` (builtin/file → 409) | admin |
 | POST | `/api/templates/:slug/deploy` | `{name, values:{}}` | `{stack, container:{id,name}}` 201 | operator |
-| GET | `/api/template-files` | – | `TemplateFilesStatus` | viewer |
+| GET | `/api/template-files` | – | `TemplateFilesStatus & {remote: TemplateRemoteStatus}` | viewer |
 | POST | `/api/template-files/reload` | – | `TemplateFileSync & {status}` | admin |
+| POST | `/api/template-remote/pull` | – | `{pull, reconcile, cached, remote}` | admin |
 | GET | `/api/stacks` | – | `StackWithContainers[]` | viewer |
 | GET | `/api/stacks/:id` | – | `StackWithContainers` | viewer |
 | POST | `/api/stacks/:id/:action` | action ∈ `start\|stop` | `StackWithContainers` | operator |
@@ -612,20 +613,24 @@ Shared, frozen: `package.json` files, `tsconfig.json` files, `vite.config.ts`, `
 
 ### 10.0 Where a template comes from
 
-`Template.source` is one of three values, and `GET /api/templates?source=` filters on it:
+`Template.source` is one of four values, and `GET /api/templates?source=` filters on it:
 
 | source | meaning |
 | --- | --- |
 | `builtin` | compiled into the image, from `templates/catalog.ts` |
 | `file` | a `*.json` file in `DOCKYARD_TEMPLATE_DIR` (default `<root>/data/templates`) |
+| `remote` | a `*.json` file pulled from `DOCKYARD_TEMPLATES_REPO` into `DOCKYARD_TEMPLATES_DIR` |
 | `user` | authored in the panel through `POST`/`PATCH /api/templates` |
 
 The point of `file` is that the directory is a bind mount, so an operator adds a template by
-dropping a file on the host. No rebuild, no restart, no release.
+dropping a file on the host. No rebuild, no restart, no release. `remote` is the same idea with the
+directory supplied for you: the panel fetches a public repository of template files, caches it, and
+reconciles the table against the cache, so a template can be added or corrected once, centrally,
+instead of on every install.
 
-Precedence, highest first: `user`, `file`, `builtin`. A file therefore retags a builtin by
-claiming its slug, and removing the file brings the builtin back. A file never overwrites a
-`user` row; it is reported as skipped instead.
+Precedence, highest first: `user`, `file`, `remote`, `builtin`. A file therefore retags a builtin by
+claiming its slug, and removing the file brings the builtin back. A `file` row outranks a `remote`
+one, and neither ever overwrites a `user` row; that is reported as skipped instead.
 
 Reconciliation is `templates/files.ts`, called from the read routes behind a directory stamp, so
 an unchanged directory costs one `readdir`. A file is validated with the same
@@ -635,6 +640,47 @@ one bad file cannot take the catalog down or stop the panel from booting.
 Three file shapes are accepted: a bare spec object, an array of specs, or
 `{ "templates": [ ... ] }`. A file whose name starts with `.` or `_` is parked and ignored.
 See `deploy/template-examples/` for one of each.
+
+#### The repository source
+
+`templates/remote.ts` pulls `DOCKYARD_TEMPLATES_REPO` over the network. `DOCKYARD_TEMPLATES_DIR` is
+the cache it writes and reconciles, and the reconcile is the same code path as a local directory, so
+both sources behave identically once the files are on disk.
+
+Which files count: `templates/*.json` if the repository has that folder, otherwise `*.json` at the
+root. Files are flattened to a basename, so a nested layout is fine but two files with the same name
+in different folders is an error rather than a silent shadow.
+
+Properties the implementation is required to hold:
+
+- **A failed fetch never removes a template.** The previous cache keeps being served and its rows
+  stay. A pull that fails and finds no cache at all reconciles nothing, because reconciling against
+  a missing directory reads as "every template was deleted".
+- **A pull can never undo local work.** `file` and `user` outrank `remote`.
+- **Removing an override uncovers what it shadowed.** The read routes force the repository reconcile
+  when a directory reconcile removed a row, and `DELETE /api/templates/:slug` forces both, because
+  the reconciles are stamp-gated and the underlying directory has not changed.
+- **Nothing is applied half-way.** One unreadable file fails the whole pull, so the cache is either
+  the previous commit's contents or the new one's.
+- **The token is never reported.** `remoteStatus()` exposes `authenticated: boolean`, never the value.
+
+Reads refresh at most once per `DOCKYARD_TEMPLATES_REFRESH_MINUTES` (default 15); the admin pull
+ignores the window. A failed pull is retried on the next read rather than being remembered as fresh.
+
+```ts
+// templates/remote.ts
+export const DEFAULT_TEMPLATES_REPO: string;
+export function remoteTemplatesEnabled(): boolean;
+export function remoteTemplatesConfig(): { enabled: boolean; repo: string; branch: string;
+  dir: string; refreshMinutes: number; authenticated: boolean };
+export function selectTemplatePaths(paths: string[]): string[];
+export function pullRemoteTemplates(): Promise<TemplateRemotePull>;
+export function syncRemoteTemplates(): Promise<{ pull: TemplateRemotePull;
+  reconcile: TemplateFileSync; cached: number }>;
+export function maybeSyncRemoteTemplates(force?: boolean): Promise<TemplateRemoteState | null>;
+export function remoteStatus(): TemplateRemoteStatus;
+export function resetRemoteTemplates(): void;
+```
 
 ```ts
 // templates/files.ts

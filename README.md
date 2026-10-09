@@ -197,10 +197,47 @@ These templates show up as `source: file` and carry a **from a file** tag. The r
 - A malformed file is reported and skipped. The other files still load and the panel still
   starts, so one typo cannot take the catalog down.
 
-The Templates page has a **Template files** card listing every file, what came out of it, and
+The Templates page has a **Template sources** card listing every file, what came out of it, and
 the validation error for any that failed. Administrators get a **Reload files** button that
 re-reads the directory immediately. `GET /api/template-files` returns the same thing, and
 `POST /api/template-files/reload` forces a reconcile.
+
+### Templates from the repository
+
+The same files, without you having to copy them around. The panel pulls a public repository of
+template JSON and reconciles it exactly like a local directory, so a template added or corrected
+there reaches every install on the next refresh. No release, no rebuild, no restart.
+
+The collection is [EliasL-git/dockyard-templates](https://github.com/EliasL-git/dockyard-templates):
+every built-in template as a file, plus the extras from `deploy/template-examples/`. To add a
+template to every Dockyard in the world, open a pull request there.
+
+```sh
+DOCKYARD_TEMPLATES_REPO=EliasL-git/dockyard-templates   # empty switches it off
+DOCKYARD_TEMPLATES_BRANCH=main
+DOCKYARD_TEMPLATES_REFRESH_MINUTES=15                   # how often a page load may refresh
+DOCKYARD_TEMPLATES_DIR=/app/data/templates-remote       # the cache
+DOCKYARD_TEMPLATES_TOKEN=                               # only for a private repo or a higher limit
+```
+
+These templates show up as `source: remote` and carry a **from the repo** tag. The rules, in
+precedence order:
+
+- A template you edited in the panel always wins, and is reported as skipped rather than
+  overwritten.
+- A local file beats the repository. Delete the file and the repository version comes back.
+- The repository beats a built-in, so a built-in can be corrected centrally.
+- **A failed fetch never removes a template.** The previous cache keeps being served.
+- **A pull is all or nothing.** One unreadable file fails the whole pull, so the cache is either
+  the old commit's contents or the new one's, never a mixture.
+
+Administrators get a **Pull now** button, which ignores the refresh window.
+`POST /api/template-remote/pull` does the same over the API.
+
+The repository may be public, so no token is needed: the anonymous GitHub API allows 60 requests
+an hour per address and the default refresh uses about four. `DOCKYARD_TEMPLATES_TOKEN` raises
+that, and is what a private repository would need. The token is never logged or returned; the API
+reports only whether one is set.
 
 ## Tunnels
 

@@ -51,16 +51,18 @@ export type TemplateFileScan = {
 
 export type TemplateFileSync = {
   at: string;
+  /** Which source this reconcile was for. */
+  source: TemplateFileSource;
   dir: string;
   files: number;
   templates: number;
   inserted: number;
   updated: number;
-  /** File slugs that shadow a builtin of the same slug. */
+  /** Slugs that shadow a builtin of the same slug. */
   overrides: string[];
-  /** File slugs whose row is user-authored, so the file was ignored for it. */
+  /** Slugs whose row is authored in the panel, so this source was ignored for them. */
   skippedUser: string[];
-  /** File-sourced rows deleted because their file is gone. */
+  /** Rows deleted because their file is gone. */
   removed: string[];
   /** Builtins that came back after the file shadowing them went away. */
   restored: string[];
@@ -68,11 +70,26 @@ export type TemplateFileSync = {
   errors: Array<{ file: string; errors: string[] }>;
 };
 
-const JSON_RE = /\.json$/i;
-const MAX_FILES = 500;
-const MAX_FILE_BYTES = 256 * 1024;
+/** The two sources that arrive as files on disk, local or fetched. */
+export type TemplateFileSource = 'file' | 'remote';
 
-function isParked(name: string): boolean {
+/**
+ * Which sources a reconcile is allowed to overwrite.
+ *
+ * This is what makes the precedence `user > file > remote > builtin` hold no matter which order the
+ * reconciles happen to run in: a reconcile overwrites everything below it and never touches
+ * anything above. Without it, a pull would silently undo a local file or a panel edit.
+ */
+const CLAIMABLE: Record<TemplateFileSource, string[]> = {
+  file: ['builtin', 'remote', 'file'],
+  remote: ['builtin', 'remote'],
+};
+
+const JSON_RE = /\.json$/i;
+export const MAX_FILES = 500;
+export const MAX_FILE_BYTES = 256 * 1024;
+
+export function isParked(name: string): boolean {
   return name.startsWith('.') || name.startsWith('_');
 }
 
@@ -200,15 +217,20 @@ function errorList(scan: TemplateFileScan): Array<{ file: string; errors: string
 /**
  * Reconcile the `templates` table with the files on disk.
  *
- * Upserts every valid file spec with `source = 'file'`, deletes file-sourced rows whose file has
+ * Upserts every valid spec with the given `source`, deletes rows of that source whose file has
  * gone, and re-seeds the builtins so anything a removed file had shadowed comes back.
  */
-export async function syncTemplateFiles(dir: string = config.templateDir): Promise<TemplateFileSync> {
+export async function syncTemplateSource(
+  dir: string,
+  source: TemplateFileSource,
+): Promise<TemplateFileSync> {
   const scan = scanTemplateFiles(dir);
   const builtinSlugs = new Set(builtinTemplates().map((s) => s.slug));
+  const claimable = CLAIMABLE[source];
 
   const report: TemplateFileSync = {
     at: new Date().toISOString(),
+    source,
     dir,
     files: scan.entries.filter((e) => e.errors.length === 0).length,
     templates: scan.specs.length,
@@ -223,22 +245,31 @@ export async function syncTemplateFiles(dir: string = config.templateDir): Promi
 
   for (const { spec } of scan.specs) {
     try {
-      // `where templates.source <> 'user'` is what protects a template authored in the panel: the
-      // conflict target matches, the update is skipped, and rowCount comes back 0.
+      // The `where templates.source = any(...)` is what protects a template authored in the panel:
+      // the conflict target matches, the update is skipped, and rowCount comes back 0.
       const res = await query<{ inserted: boolean }>(
         `insert into templates (slug, name, category, icon, description, spec, source)
-         values ($1, $2, $3, $4, $5, $6::jsonb, 'file')
+         values ($1, $2, $3, $4, $5, $6::jsonb, $7)
          on conflict (slug) do update
            set name = excluded.name,
                category = excluded.category,
                icon = excluded.icon,
                description = excluded.description,
                spec = excluded.spec,
-               source = 'file',
+               source = excluded.source,
                updated_at = now()
-           where templates.source <> 'user'
+           where templates.source = any($8::text[])
          returning (xmax = 0) as inserted`,
-        [spec.slug, spec.name, spec.category, spec.icon, spec.description, JSON.stringify(spec)],
+        [
+          spec.slug,
+          spec.name,
+          spec.category,
+          spec.icon,
+          spec.description,
+          JSON.stringify(spec),
+          source,
+          claimable,
+        ],
       );
       if (res.rowCount === 0) {
         report.skippedUser.push(spec.slug);
@@ -255,17 +286,17 @@ export async function syncTemplateFiles(dir: string = config.templateDir): Promi
     }
   }
 
-  // A file-sourced row whose file is gone has to go with it, otherwise deleting a file would
-  // leave the template behind forever. An empty slug list means "no files", so every file row goes.
+  // A row of this source whose file is gone has to go with it, otherwise deleting a file would
+  // leave the template behind forever. An empty slug list means "no files", so every row goes.
   const slugs = scan.specs.map((s) => s.spec.slug);
   const stale = await many<{ slug: string }>(
     `select slug from templates
-      where source = 'file' and not (slug = any($1::text[]))`,
-    [slugs],
+      where source = $2 and not (slug = any($1::text[]))`,
+    [slugs, source],
   );
   if (stale.length > 0) {
     const gone = stale.map((r) => r.slug);
-    await query(`delete from templates where source = 'file' and slug = any($1::text[])`, [gone]);
+    await query(`delete from templates where source = $2 and slug = any($1::text[])`, [gone, source]);
     report.removed = gone;
     // Re-seeding restores a builtin that a now-removed file had taken over. The rows are gone, so
     // the insert has nothing to conflict with and the builtin is recreated.
@@ -276,6 +307,11 @@ export async function syncTemplateFiles(dir: string = config.templateDir): Promi
   return report;
 }
 
+/** Reconcile the operator's own template directory. */
+export function syncTemplateFiles(dir: string = config.templateDir): Promise<TemplateFileSync> {
+  return syncTemplateSource(dir, 'file');
+}
+
 // The directory is re-stamped on every list request. A `statSync` per file is cheap for a handful
 // of files and it is the only way to notice an edit in place: a directory's own mtime does not
 // change when the contents of a file inside it do. The stamp is per directory so a test can point
@@ -283,7 +319,8 @@ export async function syncTemplateFiles(dir: string = config.templateDir): Promi
 const stamps = new Map<string, string>();
 /** In-flight reconciles, so concurrent reads share one sync instead of racing. */
 const inFlight = new Map<string, Promise<TemplateFileSync>>();
-let lastSync: TemplateFileSync | null = null;
+/** The last reconcile per source, for the diagnostics route. */
+const lastSync = new Map<TemplateFileSource, TemplateFileSync>();
 
 function stampOf(dir: string): string {
   try {
@@ -309,31 +346,46 @@ function stampOf(dir: string): string {
  * Returns the report when a sync ran, `null` when nothing had changed. This is what makes a new
  * file appear on a page refresh without a restart.
  */
-export async function maybeResyncTemplateFiles(dir: string = config.templateDir): Promise<TemplateFileSync | null> {
+export async function maybeResyncTemplateSource(
+  dir: string,
+  source: TemplateFileSource,
+): Promise<TemplateFileSync | null> {
+  const key = `${source}:${dir}`;
   const stamp = stampOf(dir);
-  if (stamps.get(dir) === stamp) {
+  if (stamps.get(key) === stamp) {
     // The stamp is current, but another request may still be reconciling this directory (two reads
     // fire together on a first page load). Wait for it, so a caller never builds a response from a
     // half-applied catalog or reports "no reconcile yet" while one is in flight.
-    const pending = inFlight.get(dir);
+    const pending = inFlight.get(key);
     if (pending) await pending.catch(() => undefined);
     return null;
   }
-  stamps.set(dir, stamp); // set first, so two concurrent requests do not both sync
-  const run = syncTemplateFiles(dir);
-  inFlight.set(dir, run);
+  stamps.set(key, stamp); // set first, so two concurrent requests do not both sync
+  const run = syncTemplateSource(dir, source);
+  inFlight.set(key, run);
   try {
     return await run;
   } finally {
-    inFlight.delete(dir);
+    inFlight.delete(key);
   }
 }
 
+export function maybeResyncTemplateFiles(dir: string = config.templateDir) {
+  return maybeResyncTemplateSource(dir, 'file');
+}
+
 /** Force a scan even if nothing changed, and remember it for the diagnostics route. */
-export async function reloadTemplateFiles(dir: string = config.templateDir): Promise<TemplateFileSync> {
-  const report = await syncTemplateFiles(dir);
-  stamps.set(dir, stampOf(dir));
+export async function reloadTemplateSource(
+  dir: string,
+  source: TemplateFileSource,
+): Promise<TemplateFileSync> {
+  const report = await syncTemplateSource(dir, source);
+  stamps.set(`${source}:${dir}`, stampOf(dir));
   return report;
+}
+
+export function reloadTemplateFiles(dir: string = config.templateDir) {
+  return reloadTemplateSource(dir, 'file');
 }
 
 /**
@@ -355,24 +407,31 @@ export function templateFilesStatus(dir: string = config.templateDir): {
     entries: scan.entries,
     parked: scan.parked,
     errors: errorList(scan),
-    lastSync: lastSync && lastSync.dir === dir ? lastSync : null,
+    lastSync: lastSync.get('file')?.dir === dir ? (lastSync.get('file') ?? null) : null,
   };
 }
 
 /** Record a sync for the diagnostics route. Called by the routes after a resync. */
 export function rememberTemplateFileSync(report: TemplateFileSync): void {
-  lastSync = report;
+  lastSync.set(report.source, report);
+}
+
+/** The last reconcile for a source, if it was for the directory being asked about. */
+export function lastTemplateSync(source: TemplateFileSource, dir: string): TemplateFileSync | null {
+  const report = lastSync.get(source);
+  return report && report.dir === dir ? report : null;
 }
 
 /** Test hook: forget the change stamps and the last report. */
 export function resetTemplateFileCache(): void {
   stamps.clear();
   inFlight.clear();
-  lastSync = null;
+  lastSync.clear();
 }
 
 export function logTemplateFileSync(report: TemplateFileSync): void {
   const summary = {
+    source: report.source,
     dir: report.dir,
     files: report.files,
     templates: report.templates,

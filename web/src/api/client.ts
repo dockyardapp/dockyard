@@ -35,6 +35,7 @@ import type {
   Template,
   TemplateFileSync,
   TemplateFilesStatus,
+  TemplateRemotePullResponse,
   TemplateSpec,
   Tunnel,
   UpdateStatus,
@@ -252,6 +253,8 @@ export const endpoints = {
     files: () => api.get<TemplateFilesStatus>('/api/template-files'),
     reloadFiles: () =>
       api.post<TemplateFileSync & { status: TemplateFilesStatus }>('/api/template-files/reload', {}),
+    /** Pull the template repository now, whatever the refresh window says. */
+    pullRemote: () => api.post<TemplateRemotePullResponse>('/api/template-remote/pull', {}),
   },
   stacks: {
     list: () => api.get<StackWithContainers[]>('/api/stacks'),

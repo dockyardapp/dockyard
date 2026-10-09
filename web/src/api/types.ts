@@ -156,9 +156,10 @@ export type TemplateSpec = {
  *   builtin — compiled into the image (the shipped catalog)
  *   file    — a `*.json` file in the template directory, which is a bind mount, so adding one
  *             needs no rebuild and no restart
+ *   remote  — a `*.json` file pulled from the template repository into a local cache
  *   user    — authored in the panel
  */
-export type TemplateSource = 'builtin' | 'user' | 'file';
+export type TemplateSource = 'builtin' | 'user' | 'file' | 'remote';
 
 export type Template = {
   id: string;
@@ -184,19 +185,50 @@ export type TemplateFileEntry = {
 
 export type TemplateFileSync = {
   at: string;
+  /** Which source this reconcile was for. */
+  source: 'file' | 'remote';
   dir: string;
   files: number;
   templates: number;
   inserted: number;
   updated: number;
-  /** File slugs that shadow a builtin of the same slug. */
+  /** Slugs that shadow a builtin of the same slug. */
   overrides: string[];
-  /** File slugs whose row is authored in the panel, so the file was ignored for them. */
+  /** Slugs whose row is authored in the panel, so this source was ignored for them. */
   skippedUser: string[];
-  /** File-sourced templates removed because their file is gone. */
+  /** Rows removed because their file is gone. */
   removed: string[];
   /** Builtins that came back after the file shadowing them went away. */
   restored: string[];
+  errors: Array<{ file: string; errors: string[] }>;
+};
+
+export type TemplateRemotePull = {
+  at: string;
+  repo: string;
+  branch: string;
+  commit: string | null;
+  /** Did this pull reach the network, or was it served from the cache. */
+  fetched: boolean;
+  /** True when the fetch failed and the previous cache is still being served. */
+  stale: boolean;
+  files: number;
+  bytes: number;
+  message: string | null;
+  errors: Array<{ file: string; errors: string[] }>;
+};
+
+export type TemplateRemoteStatus = {
+  enabled: boolean;
+  repo: string;
+  branch: string;
+  dir: string;
+  refreshMinutes: number;
+  authenticated: boolean;
+  exists: boolean;
+  cached: number;
+  pull: TemplateRemotePull | null;
+  lastSync: TemplateFileSync | null;
   errors: Array<{ file: string; errors: string[] }>;
 };
 
@@ -208,6 +240,14 @@ export type TemplateFilesStatus = {
   parked: string[];
   errors: Array<{ file: string; errors: string[] }>;
   lastSync: TemplateFileSync | null;
+  remote: TemplateRemoteStatus;
+};
+
+export type TemplateRemotePullResponse = {
+  pull: TemplateRemotePull;
+  reconcile: TemplateFileSync;
+  cached: number;
+  remote: TemplateRemoteStatus;
 };
 
 /* ----------------------------------------------------------------- §6 stacks */

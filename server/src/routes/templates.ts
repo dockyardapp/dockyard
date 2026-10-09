@@ -8,10 +8,13 @@
 //   POST   /templates/:slug/deploy  { name, values }        operator  201
 //   GET    /template-files                                  viewer
 //   POST   /template-files/reload                           admin
+//   POST   /template-remote/pull                            admin
 //
-// `source` is one of 'builtin' (compiled in), 'file' (a *.json file in DOCKYARD_TEMPLATE_DIR) or
-// 'user' (authored in the panel). A read reconciles the file-sourced rows first, so a template
-// added to the directory appears without a restart. See templates/files.ts.
+// `source` is one of 'builtin' (compiled in), 'file' (a *.json file in DOCKYARD_TEMPLATE_DIR),
+// 'remote' (a *.json file pulled from DOCKYARD_TEMPLATES_REPO into a local cache) or 'user'
+// (authored in the panel). A read reconciles the file and remote rows first, so a template added
+// to the directory, or pushed to the repository, appears without a restart. See
+// templates/files.ts and templates/remote.ts.
 
 import type { FastifyInstance, FastifyReply } from 'fastify';
 import { z } from 'zod';
@@ -28,11 +31,17 @@ import {
   reloadTemplateFiles,
   rememberTemplateFileSync,
   templateFilesStatus,
+  type TemplateFileSync,
 } from '../templates/files.ts';
+import {
+  maybeSyncRemoteTemplates,
+  remoteStatus,
+  syncRemoteTemplates,
+} from '../templates/remote.ts';
 import { deployTemplate, TemplateNotFoundError } from '../templates/engine.ts';
 import { logger } from '../logger.ts';
 
-type TemplateSource = 'builtin' | 'user' | 'file';
+type TemplateSource = 'builtin' | 'user' | 'file' | 'remote';
 
 type TemplateRow = {
   id: string;
@@ -112,17 +121,32 @@ function coerceValues(input: Record<string, string | number | boolean> | undefin
  * "drop a file on the host, refresh the page": the directory is a bind mount, so a new template
  * arrives with no rebuild and no restart.
  */
-async function resyncTemplateFiles(): Promise<void> {
+async function resyncTemplateSources(force = false): Promise<void> {
+  let fileReport: TemplateFileSync | null = null;
   try {
-    const report = await maybeResyncTemplateFiles();
-    if (report) {
-      rememberTemplateFileSync(report);
-      logTemplateFileSync(report);
+    fileReport = force ? await reloadTemplateFiles() : await maybeResyncTemplateFiles();
+    if (fileReport) {
+      rememberTemplateFileSync(fileReport);
+      logTemplateFileSync(fileReport);
     }
   } catch (err) {
     // A template directory that cannot be reconciled must not take the catalog down: the builtins
     // and any user-authored templates are still perfectly serviceable without it.
     logger.warn('templates: could not reconcile the template directory', {
+      error: err instanceof Error ? err.message : String(err),
+    });
+  }
+
+  // The repository is best-effort in the same way. It is gated on its own refresh window, so this
+  // is usually a `readdir` on the cache and no network call at all.
+  //
+  // Forced when the directory reconcile just removed a row, because that row may be one the
+  // repository still defines and the cache has not changed: without the force, deleting a local
+  // override would leave the template missing until something else touched the cache.
+  try {
+    await maybeSyncRemoteTemplates(force || (fileReport?.removed.length ?? 0) > 0);
+  } catch (err) {
+    logger.warn('templates: could not reconcile the template repository', {
       error: err instanceof Error ? err.message : String(err),
     });
   }
@@ -133,7 +157,7 @@ export default async function templatesRoutes(app: FastifyInstance): Promise<voi
   // was skipped (e.g. the table was empty when the process started), then layer the files on top.
   app.get('/templates', { preHandler: requireRole('viewer') }, async (req, reply) => {
     await ensureBuiltinTemplates();
-    await resyncTemplateFiles();
+    await resyncTemplateSources();
     const { category, source } = listQuery.parse(req.query ?? {});
     const rows = await many<TemplateRow>(
       `select * from templates
@@ -147,7 +171,7 @@ export default async function templatesRoutes(app: FastifyInstance): Promise<voi
 
   app.get('/templates/:slug', { preHandler: requireRole('viewer') }, async (req, reply) => {
     await ensureBuiltinTemplates();
-    await resyncTemplateFiles();
+    await resyncTemplateSources();
     const { slug } = req.params as { slug: string };
     const row = await one<TemplateRow>('select * from templates where slug = $1', [slug]);
     if (!row) return sendError(reply, 404, 'not_found', `template not found: ${slug}`);
@@ -222,20 +246,24 @@ export default async function templatesRoutes(app: FastifyInstance): Promise<voi
     const row = await one<TemplateRow>('select * from templates where slug = $1', [slug]);
     if (!row) return sendError(reply, 404, 'not_found', `template not found: ${slug}`);
     if (row.source !== 'user') {
-      // A file-sourced template is defined by a file, so deleting the row would only last until the
-      // next scan put it back. Refusing is the honest answer, and it names the way to actually
-      // remove it.
-      return sendError(
-        reply,
-        409,
-        'conflict',
+      // A file- or repository-sourced template is defined somewhere else, so deleting the row would
+      // only last until the next reconcile put it back. Refusing is the honest answer, and it names
+      // the way to actually remove it.
+      const message =
         row.source === 'file'
           ? 'this template is defined by a file on disk; remove the file to remove the template'
-          : 'built-in templates cannot be deleted',
-      );
+          : row.source === 'remote'
+            ? 'this template comes from the template repository; remove it there to remove it here'
+            : 'built-in templates cannot be deleted';
+      return sendError(reply, 409, 'conflict', message);
     }
     await query('delete from templates where slug = $1', [slug]);
     await auditFromRequest(req, 'template.delete', 'template', slug, { name: row.name });
+    // A template authored in the panel shadows a file, a repository template or a builtin of the
+    // same slug. With the row gone, the one underneath is what the catalog should be serving, and
+    // the reconciles are stamp-gated, so ask for them explicitly rather than waiting for something
+    // else to change the directory.
+    await resyncTemplateSources(true);
     return reply.code(200).send({ ok: true });
   });
 
@@ -244,8 +272,10 @@ export default async function templatesRoutes(app: FastifyInstance): Promise<voi
   // admin action because it rewrites rows.
   app.get('/template-files', { preHandler: requireRole('viewer') }, async (req, reply) => {
     await ensureBuiltinTemplates();
-    await resyncTemplateFiles();
-    return reply.code(200).send(templateFilesStatus());
+    await resyncTemplateSources();
+    // The remote source rides along rather than getting a route of its own: the page wants both in
+    // one answer, and they are the same question ("where else do templates come from?").
+    return reply.code(200).send({ ...templateFilesStatus(), remote: remoteStatus() });
   });
 
   app.post('/template-files/reload', { preHandler: requireRole('admin') }, async (req, reply) => {
@@ -259,6 +289,24 @@ export default async function templatesRoutes(app: FastifyInstance): Promise<voi
       errors: report.errors.length,
     });
     return reply.code(200).send({ ...report, status: templateFilesStatus() });
+  });
+
+  // Pull the template repository now, whatever the refresh window says. This is the button an
+  // operator presses after pushing a template, so it must not be a no-op when the window is warm.
+  app.post('/template-remote/pull', { preHandler: requireRole('admin') }, async (req, reply) => {
+    const { pull, reconcile, cached } = await syncRemoteTemplates();
+    logTemplateFileSync(reconcile);
+    await auditFromRequest(req, 'template.pull_remote', 'template', null, {
+      repo: pull.repo,
+      branch: pull.branch,
+      fetched: pull.fetched,
+      files: pull.files,
+      inserted: reconcile.inserted,
+      updated: reconcile.updated,
+      removed: reconcile.removed,
+      errors: pull.errors.length,
+    });
+    return reply.code(200).send({ pull, reconcile, cached, remote: remoteStatus() });
   });
 
   app.post('/templates/:slug/deploy', { preHandler: requireRole('operator') }, async (req, reply) => {

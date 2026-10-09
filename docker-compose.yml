@@ -50,6 +50,13 @@ services:
       # Templates can be supplied as JSON files. This directory is a bind mount (see volumes), so
       # dropping a file on the host adds a template with no rebuild and no restart.
       DOCKYARD_TEMPLATE_DIR: /app/data/templates
+      # Templates pulled live from a public repository of template JSON. A template pushed there
+      # reaches every install on the next refresh. Empty switches the source off.
+      DOCKYARD_TEMPLATES_REPO: ${DOCKYARD_TEMPLATES_REPO:-EliasL-git/dockyard-templates}
+      DOCKYARD_TEMPLATES_BRANCH: ${DOCKYARD_TEMPLATES_BRANCH:-main}
+      DOCKYARD_TEMPLATES_DIR: /app/data/templates-remote
+      DOCKYARD_TEMPLATES_REFRESH_MINUTES: ${DOCKYARD_TEMPLATES_REFRESH_MINUTES:-15}
+      DOCKYARD_TEMPLATES_TOKEN: ${DOCKYARD_TEMPLATES_TOKEN:-}
       CLOUDFLARED_BIN: /usr/local/bin/cloudflared
       CLOUDFLARE_API_TOKEN: ${CLOUDFLARE_API_TOKEN:-}
       CLOUDFLARE_ACCOUNT_ID: ${CLOUDFLARE_ACCOUNT_ID:-}

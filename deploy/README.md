@@ -39,6 +39,11 @@ mkdir -p data/update data/templates
 in there appears in the panel on the next page load, with no rebuild and no restart. Copy the
 files in `deploy/template-examples/` to start from something real.
 
+Nothing else needs creating for templates pulled from a repository. That cache lives in the
+`dockyard-data` volume at `/app/data/templates-remote`, because it is the panel's own working copy
+rather than something an operator edits. `DOCKYARD_TEMPLATES_REPO` chooses the repository and an
+empty value switches the source off; see `.env.example`.
+
 ## 2. Reverse proxy and TLS
 
 Copy `deploy/nginx.conf.example` to `/etc/nginx/sites-available/dockyard`, set

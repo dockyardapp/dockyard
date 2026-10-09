@@ -55,6 +55,10 @@ export default defineConfig({
       // login limiter (10/min by default, and that default is the right one for
       // production). Raise it here rather than weakening the shipped value.
       DOCKYARD_LOGIN_RATE_MAX: '500',
+      // The template repository is a network dependency and this suite must not have any. Off here,
+      // so the catalog is the built-in one plus whatever a test drops on disk. The repository source
+      // has its own tests, against a local server standing in for GitHub.
+      DOCKYARD_TEMPLATES_REPO: '',
     },
   },
 });
