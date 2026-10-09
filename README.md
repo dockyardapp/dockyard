@@ -165,6 +165,13 @@ dockyard.template=<template slug>
 so the panel can tell its own containers apart from anything else on the host. User templates can
 be created, edited and deleted from the UI and are validated against the same spec schema.
 
+The deploy form is where you supply the values a template asks for, and the **host port** is the one
+worth a second look. A template declares the port inside the container; the host port is what you
+reach it on from outside and what a tunnel forwards to, so it is yours to choose. Publish it
+wherever you like, and a port that another running container already holds is flagged in the form
+rather than failing at the daemon. If you are going to tunnel the container, a high port is easier to
+keep track of and less likely to be taken.
+
 Each template card shows the deployed product's real logo. The marks are vendored, not fetched at
 runtime, so the panel works with no outbound access and the bundle carries only the 17 it needs.
 `web/src/components/templateLogos.ts` is generated; to change it, see the header of

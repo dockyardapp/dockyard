@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { endpoints, errorMessage } from '../api/client';
 import type {
@@ -598,10 +598,48 @@ function DeployDrawer({
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [result, setResult] = useState<DeployResponse | null>(null);
+  /** Host port -> the running container publishing it, so a clash is caught before Docker rejects it. */
+  const [published, setPublished] = useState<Map<number, string>>(new Map());
+
+  useEffect(() => {
+    let cancelled = false;
+    endpoints.containers
+      .list({ all: true })
+      .then((rows) => {
+        if (cancelled) return;
+        const used = new Map<number, string>();
+        for (const c of rows) {
+          // Only a running container holds its host port. A stopped one has released it, and
+          // warning about that would stop a legitimate redeploy.
+          if (c.state !== 'running') continue;
+          for (const p of c.ports) if (p.publicPort) used.set(p.publicPort, c.name);
+        }
+        setPublished(used);
+      })
+      .catch(() => {
+        // A lookup that fails must not block a deploy. Docker is the authority on a clash anyway, and
+        // an empty map just means no warning is shown.
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   const preview = renderPreview(spec, values);
   const nameError = !name.trim() ? 'A name is required.' : null;
-  const canDeploy = !nameError && preview.missing.length === 0;
+
+  // What each declared port will actually publish, and whether something already holds it. This
+  // mirrors the server's rule (blank falls back to the template default) so the warning appears
+  // against the same value the deploy will use.
+  const portRows = spec.ports.map((p) => {
+    const entered = values[`port:${p.container}`] ?? '';
+    const host = entered === '' ? p.defaultHost : Number(entered);
+    const valid = host !== undefined && Number.isInteger(host) && host >= 1 && host <= 65535;
+    return { port: p, entered, host, valid, takenBy: valid ? published.get(host) ?? null : null };
+  });
+  const clash = portRows.find((r) => r.takenBy) ?? null;
+
+  const canDeploy = !nameError && preview.missing.length === 0 && !clash;
 
   const setValue = (key: string, v: string) => setValues((prev) => ({ ...prev, [key]: v }));
 
@@ -688,18 +726,43 @@ function DeployDrawer({
 
       {spec.ports.length > 0 ? (
         <>
-          <h3 style={{ margin: 'var(--space-5) 0 var(--space-3)' }}>Ports</h3>
-          {spec.ports.map((p) => (
-            <Field key={p.container} label={p.label ?? `Container port ${p.container}`} hint={`Host port (default ${p.defaultHost ?? 'auto'})`}>
-              <input
-                type="number"
-                min={1}
-                max={65535}
-                value={values[`port:${p.container}`] ?? ''}
-                placeholder={p.defaultHost ? String(p.defaultHost) : 'auto'}
-                onChange={(ev) => setValue(`port:${p.container}`, ev.target.value)}
-                disabled={busy || !!result}
-              />
+          <h3 style={{ margin: 'var(--space-5) 0 var(--space-2)' }}>Ports</h3>
+          <p className="dim" style={{ fontSize: 'var(--fs-xs)', marginTop: 0 }}>
+            Published on the host, forwarded to the container. If you plan to tunnel it, a high port
+            is easier to keep track of and less likely to be taken.
+          </p>
+          {portRows.map(({ port: p, host, takenBy }) => (
+            <Field
+              key={p.container}
+              label="Host port"
+              error={takenBy ? `Port ${host} is already published by ${takenBy}. Pick another.` : null}
+              hint={
+                <>
+                  {p.label ? `${p.label} listens on ` : 'Listens on '}
+                  <span className="mono-cell">{p.container}</span> inside the container.
+                  {p.defaultHost
+                    ? ` Leave blank to publish it on ${p.defaultHost}.`
+                    : ' Leave blank to let Docker choose.'}
+                </>
+              }
+            >
+              <div className="row" style={{ gap: 'var(--space-2)', alignItems: 'center' }}>
+                <input
+                  type="number"
+                  min={1}
+                  max={65535}
+                  style={{ flex: '0 1 9rem' }}
+                  aria-label={`Host port for ${p.label ?? `container port ${p.container}`}`}
+                  aria-invalid={takenBy ? true : undefined}
+                  value={values[`port:${p.container}`] ?? ''}
+                  placeholder={p.defaultHost ? String(p.defaultHost) : 'auto'}
+                  onChange={(ev) => setValue(`port:${p.container}`, ev.target.value)}
+                  disabled={busy || !!result}
+                />
+                <span className="dim mono-cell" style={{ fontSize: 'var(--fs-xs)' }}>
+                  → container {p.container}
+                </span>
+              </div>
             </Field>
           ))}
         </>
@@ -711,11 +774,20 @@ function DeployDrawer({
           {spec.volumes.map((v) => (
             <Field
               key={v.container}
-              label={v.label ?? v.container}
-              hint={v.named ? 'Named volume (leave blank for a generated name)' : 'Host path'}
+              label={v.named ? 'Volume name' : 'Host path'}
+              hint={
+                <>
+                  {v.label ? `${v.label} is mounted at ` : 'Mounted at '}
+                  <span className="mono-cell">{v.container}</span> in the container.
+                  {v.named
+                    ? ' Leave blank for a generated name.'
+                    : ' Leave blank and Docker creates an anonymous volume instead.'}
+                </>
+              }
             >
               <input
                 type="text"
+                aria-label={`${v.named ? 'Volume name' : 'Host path'} for ${v.label ?? v.container}`}
                 value={values[`volume:${v.container}`] ?? ''}
                 placeholder={v.named ? 'auto' : `/srv/${template.slug}`}
                 onChange={(ev) => setValue(`volume:${v.container}`, ev.target.value)}
@@ -738,13 +810,21 @@ function DeployDrawer({
           <dd className="mono-cell">
             {preview.ports.length === 0
               ? '-'
-              : preview.ports.map((p) => `${p.host ?? 'auto'}->${p.container}`).join(', ')}
+              : preview.ports
+                  .map((p) => `host ${p.host ?? 'auto'} -> container ${p.container}`)
+                  .join(', ')}
           </dd>
           <dt>Volumes</dt>
           <dd className="mono-cell">
             {preview.volumes.length === 0
               ? '-'
-              : preview.volumes.map((v) => `${v.host ?? (v.named ? 'auto' : '')}${v.host || v.named ? ':' : ''}${v.container}`).join(', ')}
+              : preview.volumes
+                  .map((v) =>
+                    v.named
+                      ? `volume ${v.host ?? 'auto'} -> container ${v.container}`
+                      : `host ${v.host ?? 'unset'} -> container ${v.container}`,
+                  )
+                  .join(', ')}
           </dd>
           <dt>Environment</dt>
           <dd className="mono-cell">
@@ -765,6 +845,13 @@ function DeployDrawer({
           <div style={{ marginTop: 'var(--space-3)' }}>
             <Banner tone="warn" title="Required values missing">
               {preview.missing.join(', ')}
+            </Banner>
+          </div>
+        ) : clash ? (
+          <div style={{ marginTop: 'var(--space-3)' }}>
+            <Banner tone="warn" title="That host port is taken">
+              {clash.takenBy} is already publishing port {clash.host} on this host. Choose a
+              different one, or stop that container first.
             </Banner>
           </div>
         ) : (
