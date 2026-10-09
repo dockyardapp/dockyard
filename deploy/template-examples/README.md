@@ -12,9 +12,10 @@ The new template appears in the panel on the next page load. No rebuild, no rest
 
 ## The three shapes
 
-**One template per file.** `gitea.json` is a bare spec object.
+**One template per file.** `gitea.json` and `vaultwarden.json` are bare spec objects.
 
-**An array.** A file holding `[ {...}, {...} ]`.
+**An array.** `two-services.json` holds `[ {...}, {...} ]`. Same thing as a pack, without the
+wrapper.
 
 **A pack.** `pack-homelab.json` is `{ "templates": [ ... ] }`. Use this when a group of
 templates belongs together, since it is one file to add or remove.

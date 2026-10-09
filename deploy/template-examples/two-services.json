@@ -1,0 +1,49 @@
+[
+  {
+    "schemaVersion": 1,
+    "slug": "caddy",
+    "name": "Caddy",
+    "category": "web",
+    "icon": "🔒",
+    "description": "A web server that obtains and renews its own TLS certificates.",
+    "image": "caddy",
+    "tag": "2.11.7",
+    "ports": [
+      { "container": 80, "label": "HTTP", "defaultHost": 8080 },
+      { "container": 443, "label": "HTTPS", "defaultHost": 8443 }
+    ],
+    "env": [
+      {
+        "key": "CADDY_SERVER_NAME",
+        "label": "Site address",
+        "default": ":80",
+        "description": "Only read if you pass the environment-variable form of the config below. With a real domain here Caddy fetches a certificate on first start."
+      }
+    ],
+    "volumes": [
+      { "container": "/data", "label": "Certificates and other state", "named": true },
+      { "container": "/config", "label": "Autosaved configuration", "named": true },
+      { "container": "/srv", "label": "Files to serve" }
+    ],
+    "restartPolicy": "unless-stopped",
+    "notes": "With no config file Caddy serves a welcome page. Mount a Caddyfile at /etc/caddy/Caddyfile to serve anything real.",
+    "docsUrl": "https://hub.docker.com/_/caddy"
+  },
+  {
+    "schemaVersion": 1,
+    "slug": "memcached",
+    "name": "Memcached",
+    "category": "database",
+    "icon": "🧠",
+    "description": "An in-memory key/value cache. Everything in it is lost on restart, by design.",
+    "image": "memcached",
+    "tag": "1.6.45",
+    "ports": [{ "container": 11211, "label": "Memcached", "defaultHost": 11211 }],
+    "env": [],
+    "volumes": [],
+    "restartPolicy": "unless-stopped",
+    "command": ["memcached", "-m", "256"],
+    "notes": "256 MB of cache, set by the command below. There is nothing to persist, so it has no volume.",
+    "docsUrl": "https://hub.docker.com/_/memcached"
+  }
+]

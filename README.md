@@ -183,8 +183,9 @@ cp deploy/template-examples/gitea.json data/templates/
 
 The directory is `DOCKYARD_TEMPLATE_DIR`, which defaults to `<repo>/data/templates` and is a
 bind mount in `docker-compose.yml`, so the file goes on the host next to the compose file.
-`deploy/template-examples/` has one of each accepted shape (a bare spec, an array, and a
-`{ "templates": [ ... ] }` pack) plus a field reference.
+`deploy/template-examples/` has one of each accepted shape (a bare spec in `gitea.json` and
+`vaultwarden.json`, an array in `two-services.json`, and a `{ "templates": [ ... ] }` pack in
+`pack-homelab.json`) plus a field reference.
 
 These templates show up as `source: file` and carry a **from a file** tag. The rules:
 
