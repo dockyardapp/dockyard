@@ -61,7 +61,7 @@ button that re-reads the directory immediately instead of waiting for the next p
 | `tag` | yes | a real published tag. Pin it rather than using `latest` |
 | `ports[]` | no | `{ container, label?, defaultHost? }` |
 | `env[]` | no | `{ key, label?, default?, required?, secret?, description? }` |
-| `volumes[]` | no | `{ container, label?, named? }`. `named: true` makes Dockyard create a named volume |
+| `volumes[]` | no | `{ container, label?, named? }`. Dockyard creates a named volume unless the spec says `named: false` |
 | `restartPolicy` | yes | `no`, `always`, `unless-stopped`, `on-failure` |
 | `healthcheck` | no | `{ test: string[], intervalSec, timeoutSec, retries }` |
 | `command` / `entrypoint` | no | string arrays, passed through to Docker |

@@ -771,31 +771,37 @@ function DeployDrawer({
       {spec.volumes.length > 0 ? (
         <>
           <h3 style={{ margin: 'var(--space-5) 0 var(--space-3)' }}>Volumes</h3>
-          {spec.volumes.map((v) => (
-            <Field
-              key={v.container}
-              label={v.named ? 'Volume name' : 'Host path'}
-              hint={
-                <>
-                  {v.label ? `${v.label} is mounted at ` : 'Mounted at '}
-                  <span className="mono-cell">{v.container}</span> in the container.
-                  {v.named
-                    ? ' Leave blank for a generated name.'
-                    : ' Leave blank and Docker creates an anonymous volume instead.'}
-                </>
-              }
-            >
-              <input
-                type="text"
-                aria-label={`${v.named ? 'Volume name' : 'Host path'} for ${v.label ?? v.container}`}
-                value={values[`volume:${v.container}`] ?? ''}
-                placeholder={v.named ? 'auto' : `/srv/${template.slug}`}
-                onChange={(ev) => setValue(`volume:${v.container}`, ev.target.value)}
-                disabled={busy || !!result}
-                className="mono"
-              />
-            </Field>
-          ))}
+          {spec.volumes.map((v) => {
+            // `named` is opt-OUT: the engine makes a named volume unless a spec says `named: false`,
+            // so an absent flag behaves the same as `true`. Reading it as a truthy opt-in inverted
+            // this and described the common case wrongly.
+            const anonymous = v.named === false;
+            return (
+              <Field
+                key={v.container}
+                label="Host path"
+                hint={
+                  <>
+                    {v.label ? `${v.label} is mounted at ` : 'Mounted at '}
+                    <span className="mono-cell">{v.container}</span> in the container.
+                    {anonymous
+                      ? ' Leave blank for an anonymous volume.'
+                      : ' Leave blank to keep the data in a named volume of its own.'}
+                  </>
+                }
+              >
+                <input
+                  type="text"
+                  aria-label={`Host path for ${v.label ?? v.container}`}
+                  value={values[`volume:${v.container}`] ?? ''}
+                  placeholder={`e.g. /srv/${template.slug}`}
+                  onChange={(ev) => setValue(`volume:${v.container}`, ev.target.value)}
+                  disabled={busy || !!result}
+                  className="mono"
+                />
+              </Field>
+            );
+          })}
         </>
       ) : null}
 
@@ -820,9 +826,11 @@ function DeployDrawer({
               ? '-'
               : preview.volumes
                   .map((v) =>
-                    v.named
-                      ? `volume ${v.host ?? 'auto'} -> container ${v.container}`
-                      : `host ${v.host ?? 'unset'} -> container ${v.container}`,
+                    v.host
+                      ? `host ${v.host} -> container ${v.container}`
+                      : v.named === false
+                        ? `anonymous volume -> container ${v.container}`
+                        : `named volume -> container ${v.container}`,
                   )
                   .join(', ')}
           </dd>

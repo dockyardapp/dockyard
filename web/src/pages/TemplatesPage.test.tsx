@@ -223,3 +223,44 @@ describe('a host port that is already published', () => {
     expect(within(dialog).getByRole('button', { name: /deploy/i })).not.toBeDisabled();
   });
 });
+
+describe('the deploy form says where the data will actually go', () => {
+  // `named` is opt-out in the engine (server/src/templates/engine.ts): a spec that says nothing gets
+  // a named volume, and only `named: false` asks for an anonymous one. The form read it as a truthy
+  // opt-in, so it told every user of every shipped template the opposite of what would happen, and
+  // labelled the field "Volume name" when the value it accepts is a host path.
+  it('describes the named volume a blank host path produces', async () => {
+    const { dialog } = await openDeploy();
+
+    const input = within(dialog).getByLabelText('Host path for Data');
+    expect(input.getAttribute('placeholder')).toBe('e.g. /srv/uptime-kuma');
+    expect(within(dialog).getByText(/Leave blank to keep the data in a named volume/)).toBeTruthy();
+    expect(within(dialog).getByText('named volume -> container /app/data')).toBeTruthy();
+  });
+
+  it('describes an anonymous volume only when the spec asks for one', async () => {
+    vi.mocked(endpoints.templates.list).mockResolvedValue([
+      {
+        ...template,
+        spec: {
+          ...template.spec,
+          volumes: [{ container: '/app/data', label: 'Data', named: false }],
+        },
+      },
+    ]);
+    const { dialog } = await openDeploy();
+
+    expect(within(dialog).getByText(/Leave blank for an anonymous volume/)).toBeTruthy();
+    expect(within(dialog).getByText('anonymous volume -> container /app/data')).toBeTruthy();
+  });
+
+  it('switches to a bind mount once a host path is typed', async () => {
+    const { user, dialog } = await openDeploy();
+
+    await user.type(within(dialog).getByLabelText('Host path for Data'), '/srv/uptime-kuma');
+
+    await waitFor(() =>
+      expect(within(dialog).getByText('host /srv/uptime-kuma -> container /app/data')).toBeTruthy(),
+    );
+  });
+});

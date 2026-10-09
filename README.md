@@ -172,6 +172,9 @@ wherever you like, and a port that another running container already holds is fl
 rather than failing at the daemon. If you are going to tunnel the container, a high port is easier to
 keep track of and less likely to be taken.
 
+Volumes work the same way round: give a path and the container bind-mounts it, or leave it blank and
+Dockyard gives the container a named volume of its own, so the data outlives the container.
+
 Each template card shows the deployed product's real logo. The marks are vendored, not fetched at
 runtime, so the panel works with no outbound access and the bundle carries only the 17 it needs.
 `web/src/components/templateLogos.ts` is generated; to change it, see the header of
