@@ -125,12 +125,11 @@ test('the templates page draws each product its own mark', async ({ page }) => {
     })),
   );
 
-  // Only the shipped catalog is guaranteed a vendored mark. A template that came
-  // from a file on the host falls back to its own icon, so scope to built-ins and
-  // the suite stays true whatever is in data/templates.
-  const cards = allCards.filter((c) => c.tags.includes('built-in'));
-
-  const byName = new Map(cards.map((c) => [c.name, c.fill]));
+  // Assert by product name rather than by source tag. The panel guarantees a vendored mark for the
+  // catalog it ships, but the same product can be served from the catalog, from a file, or from the
+  // template repository, and the mark is looked up by slug either way. Scoping to the `built-in` tag
+  // made the test fail whenever the catalog had been shadowed by another source.
+  const byName = new Map(allCards.map((c) => [c.name, c.fill]));
 
   // The point of the change: the card carries the product's real logo, in the
   // product's own colour, rather than an emoji stand-in.
@@ -139,10 +138,15 @@ test('the templates page draws each product its own mark', async ({ page }) => {
   expect(byName.get('Grafana')).toBe('#F46800');
   expect(byName.get('MongoDB')).toBe('#47A248');
 
-  // Every built-in template has one, and they are not a single shared token.
-  expect(cards.length).toBeGreaterThanOrEqual(15);
-  expect(cards.filter((c) => c.fill === null)).toEqual([]);
-  expect(new Set(cards.map((c) => c.fill)).size).toBeGreaterThan(10);
+  // Most of the catalog carries a real logo, and they are not a single shared token. An operator's
+  // own file template is the one thing that legitimately falls back to its icon.
+  const marked = allCards.filter((c) => c.fill !== null);
+  expect(marked.length).toBeGreaterThanOrEqual(15);
+  expect(new Set(marked.map((c) => c.fill)).size).toBeGreaterThan(10);
+
+  // Nothing in the shipped catalog is left without one.
+  const builtins = allCards.filter((c) => c.tags.includes('built-in'));
+  expect(builtins.filter((c) => c.fill === null)).toEqual([]);
 });
 
 test('a template file on disk shows up without a restart, and a bad one is reported', async ({ page }) => {

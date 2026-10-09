@@ -450,5 +450,8 @@ export function logTemplateFileSync(report: TemplateFileSync): void {
     });
     return;
   }
-  logger.info('templates: synced from files', summary);
+  // Named by source: the same reconcile serves the local directory and the repository cache, and
+  // an operator reading the log needs to know which one moved.
+  const from = report.source === 'remote' ? 'the template repository' : 'files';
+  logger.info(`templates: synced from ${from}`, summary);
 }

@@ -31,13 +31,13 @@ import { config } from '../config.ts';
 import { logger } from '../logger.ts';
 import {
   lastTemplateSync,
+  logTemplateFileSync,
+  MAX_FILES,
+  MAX_FILE_BYTES,
+  isParked,
   maybeResyncTemplateSource,
   reloadTemplateSource,
   scanTemplateFiles,
-  syncTemplateSource,
-  isParked,
-  MAX_FILES,
-  MAX_FILE_BYTES,
   type TemplateFileSync,
 } from './files.ts';
 
@@ -349,6 +349,10 @@ export async function maybeSyncRemoteTemplates(force = false): Promise<TemplateR
     ? await reloadTemplateSource(config.templateRemoteDir, 'remote')
     : await maybeResyncTemplateSource(config.templateRemoteDir, 'remote');
 
+  // Log only a reconcile that actually ran. `lastTemplateSync` remembers the previous one for the
+  // card, and logging that on every read would fill the log with the same line.
+  if (report) logTemplateFileSync(report);
+
   return {
     pull: lastPull,
     reconcile: report ?? lastTemplateSync('remote', config.templateRemoteDir),
@@ -363,7 +367,10 @@ export async function syncRemoteTemplates(): Promise<{
   cached: number;
 }> {
   const pull = await pullRemoteTemplates();
-  const reconcile = await syncTemplateSource(config.templateRemoteDir, 'remote');
+  // `reloadTemplateSource` rather than `syncTemplateSource`, so the stamp is refreshed too and the
+  // next read does not immediately redo this reconcile.
+  const reconcile = await reloadTemplateSource(config.templateRemoteDir, 'remote');
+  logTemplateFileSync(reconcile);
   return { pull, reconcile, cached: scanTemplateFiles(config.templateRemoteDir).specs.length };
 }
 

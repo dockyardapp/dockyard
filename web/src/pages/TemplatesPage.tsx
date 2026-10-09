@@ -346,17 +346,7 @@ function when(iso: string | null | undefined): string {
 }
 
 /** The repository half of the card: what is being pulled, and what came of the last pull. */
-function TemplateRepoSection({
-  remote,
-  canPull,
-  pulling,
-  onPull,
-}: {
-  remote: TemplateRemoteStatus | null | undefined;
-  canPull: boolean;
-  pulling: boolean;
-  onPull: () => void;
-}) {
+function TemplateRepoSection({ remote }: { remote: TemplateRemoteStatus | null | undefined }) {
   if (!remote) return null;
 
   if (!remote.enabled) {
@@ -415,18 +405,9 @@ function TemplateRepoSection({
           </div>
         </Banner>
       ) : null}
-
-      <div className="row" style={{ gap: 'var(--space-2)', marginTop: 'var(--space-3)' }}>
-        <Button size="sm" icon="refresh" busy={pulling} disabled={!canPull} onClick={onPull}>
-          Pull now
-        </Button>
-        <span className="dim" style={{ fontSize: 'var(--fs-micro)' }}>
-          Fetches the repository and reconciles straight away, ignoring the refresh window.
-        </span>
-      </div>
-    </>
-  );
-}
+      </>
+    );
+  }
 
 function TemplateSourcesCard({
   status,
@@ -473,7 +454,7 @@ function TemplateSourcesCard({
         ) : !status ? null : (
           <>
             <h3 style={{ marginTop: 0 }}>Template repository</h3>
-            <TemplateRepoSection remote={remote} canPull={canManage} pulling={pulling} onPull={onPull} />
+            <TemplateRepoSection remote={remote} />
 
             <h3 style={{ marginTop: 'var(--space-5)' }}>Local files</h3>
             <p className="dim" style={{ fontSize: 'var(--fs-xs)', marginTop: 0 }}>

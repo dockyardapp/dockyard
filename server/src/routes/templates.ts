@@ -294,8 +294,8 @@ export default async function templatesRoutes(app: FastifyInstance): Promise<voi
   // Pull the template repository now, whatever the refresh window says. This is the button an
   // operator presses after pushing a template, so it must not be a no-op when the window is warm.
   app.post('/template-remote/pull', { preHandler: requireRole('admin') }, async (req, reply) => {
+    // The reconcile logs itself, so there is no second call here.
     const { pull, reconcile, cached } = await syncRemoteTemplates();
-    logTemplateFileSync(reconcile);
     await auditFromRequest(req, 'template.pull_remote', 'template', null, {
       repo: pull.repo,
       branch: pull.branch,
