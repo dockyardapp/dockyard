@@ -1,4 +1,4 @@
-import { mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { copyFileSync, mkdirSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -22,6 +22,33 @@ const admin = adminCredentials();
 
 /** web/e2e -> repo root, so a test can write into the real data/templates. */
 const REPO_ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', '..');
+
+/** The panel ships no catalog, so the suite seeds the template directory with these. */
+const FIXTURE_TEMPLATES = path.join(REPO_ROOT, 'server', 'test', 'fixtures', 'templates');
+const TEMPLATE_DIR = path.join(REPO_ROOT, 'data', 'templates');
+
+/**
+ * Put the fixtures in the template directory for the whole run.
+ *
+ * The panel compiles no catalog in any more: a template comes from the repository, from this
+ * directory, or from the panel. This suite runs with the repository switched off so it stays offline
+ * and deterministic, which leaves this directory as the only source, so it has to have something in
+ * it for the templates page to have anything to draw.
+ */
+const seededTemplates: string[] = [];
+
+test.beforeAll(() => {
+  mkdirSync(TEMPLATE_DIR, { recursive: true });
+  for (const name of readdirSync(FIXTURE_TEMPLATES)) {
+    if (!name.endsWith('.json')) continue;
+    copyFileSync(path.join(FIXTURE_TEMPLATES, name), path.join(TEMPLATE_DIR, name));
+    seededTemplates.push(name);
+  }
+});
+
+test.afterAll(() => {
+  for (const name of seededTemplates) rmSync(path.join(TEMPLATE_DIR, name), { force: true });
+});
 
 const ROUTES: Array<{ path: string; heading: string }> = [
   { path: '/', heading: 'Dashboard' },
@@ -121,14 +148,12 @@ test('the templates page draws each product its own mark', async ({ page }) => {
     nodes.map((node) => ({
       name: node.querySelector('.tpl-name')?.textContent?.trim() ?? '',
       fill: node.querySelector('svg.tpl-icon')?.getAttribute('fill') ?? null,
-      tags: [...node.querySelectorAll('.tag')].map((t) => t.textContent?.trim() ?? ''),
     })),
   );
 
-  // Assert by product name rather than by source tag. The panel guarantees a vendored mark for the
-  // catalog it ships, but the same product can be served from the catalog, from a file, or from the
-  // template repository, and the mark is looked up by slug either way. Scoping to the `built-in` tag
-  // made the test fail whenever the catalog had been shadowed by another source.
+  // Assert by product name rather than by source tag. The panel compiles no catalog in, so the same
+  // product can arrive from the repository, from a file, or from the panel, and the mark is looked
+  // up by slug either way.
   const byName = new Map(allCards.map((c) => [c.name, c.fill]));
 
   // The point of the change: the card carries the product's real logo, in the
@@ -138,15 +163,12 @@ test('the templates page draws each product its own mark', async ({ page }) => {
   expect(byName.get('Grafana')).toBe('#F46800');
   expect(byName.get('MongoDB')).toBe('#47A248');
 
-  // Most of the catalog carries a real logo, and they are not a single shared token. An operator's
-  // own file template is the one thing that legitimately falls back to its icon.
+  // Every template the suite seeded carries a real mark, and they are not one shared token. Whether
+  // the whole catalog does is the templates repository's business, checked in
+  // server/test/template-logos.test.ts.
   const marked = allCards.filter((c) => c.fill !== null);
-  expect(marked.length).toBeGreaterThanOrEqual(15);
-  expect(new Set(marked.map((c) => c.fill)).size).toBeGreaterThan(10);
-
-  // Nothing in the shipped catalog is left without one.
-  const builtins = allCards.filter((c) => c.tags.includes('built-in'));
-  expect(builtins.filter((c) => c.fill === null)).toEqual([]);
+  expect(marked.length).toBeGreaterThanOrEqual(6);
+  expect(new Set(marked.map((c) => c.fill)).size).toBeGreaterThan(4);
 });
 
 test('a template file on disk shows up without a restart, and a bad one is reported', async ({ page }) => {
@@ -444,7 +466,7 @@ test('the running version is visible in the chrome and detailed on settings', as
   // the suite, and a stale hardcoded value would pass while the panel reported the wrong build.
   const pkg = JSON.parse(readFileSync(new URL('../../package.json', import.meta.url), 'utf8'));
   await expect(card).toContainText(`v${pkg.version}`);
-  await expect(card).toContainText('EliasL-git/dockyard');
+  await expect(card).toContainText('dockyardapp/dockyard');
   await expect(card.getByRole('button', { name: 'Check for updates' })).toBeEnabled();
 });
 

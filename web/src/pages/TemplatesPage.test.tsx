@@ -69,7 +69,7 @@ vi.mock('../api/client', async (importOriginal) => {
   };
 });
 
-/** A template shaped like the shipped Uptime Kuma one: one port, with a default host port. */
+/** A template shaped like the Uptime Kuma one the repository ships: one port, with a default host port. */
 const template: Template = {
   id: 'tpl-1',
   slug: 'uptime-kuma',
@@ -77,7 +77,7 @@ const template: Template = {
   category: 'monitoring',
   icon: '📈',
   description: 'Self-hosted uptime monitoring.',
-  source: 'builtin',
+  source: 'remote',
   spec: {
     schemaVersion: 1,
     slug: 'uptime-kuma',

@@ -4,17 +4,17 @@
 //   GET    /templates/:slug                                 viewer
 //   POST   /templates               { spec }                operator  201
 //   PATCH  /templates/:slug         { spec }                operator
-//   DELETE /templates/:slug                                 admin   (builtin/file -> 409)
+//   DELETE /templates/:slug                                 admin   (file/remote -> 409)
 //   POST   /templates/:slug/deploy  { name, values }        operator  201
 //   GET    /template-files                                  viewer
 //   POST   /template-files/reload                           admin
 //   POST   /template-remote/pull                            admin
 //
-// `source` is one of 'builtin' (compiled in), 'file' (a *.json file in DOCKYARD_TEMPLATE_DIR),
-// 'remote' (a *.json file pulled from DOCKYARD_TEMPLATES_REPO into a local cache) or 'user'
-// (authored in the panel). A read reconciles the file and remote rows first, so a template added
-// to the directory, or pushed to the repository, appears without a restart. See
-// templates/files.ts and templates/remote.ts.
+// `source` is one of 'remote' (a *.json file pulled from DOCKYARD_TEMPLATES_REPO into a local
+// cache), 'file' (a *.json file in DOCKYARD_TEMPLATE_DIR) or 'user' (authored in the panel). The
+// repository is the source of truth and nothing is compiled into the panel, so a read reconciles
+// the remote and file rows first and a template appears without a restart. See templates/files.ts
+// and templates/remote.ts.
 
 import type { FastifyInstance, FastifyReply } from 'fastify';
 import { z } from 'zod';
@@ -24,7 +24,6 @@ import { canSee, denyScoped, filterVisible, grantLabel, isUnrestricted } from '.
 import { auditFromRequest } from '../auth/audit.ts';
 import { validateSpec, TemplateValidationError } from '../templates/schema.ts';
 import type { TemplateSpec } from '../templates/schema.ts';
-import { ensureBuiltinTemplates } from '../templates/catalog.ts';
 import {
   logTemplateFileSync,
   maybeResyncTemplateFiles,
@@ -41,7 +40,7 @@ import {
 import { deployTemplate, TemplateNotFoundError } from '../templates/engine.ts';
 import { logger } from '../logger.ts';
 
-type TemplateSource = 'builtin' | 'user' | 'file' | 'remote';
+type TemplateSource = 'user' | 'file' | 'remote';
 
 type TemplateRow = {
   id: string;
@@ -130,8 +129,8 @@ async function resyncTemplateSources(force = false): Promise<void> {
       logTemplateFileSync(fileReport);
     }
   } catch (err) {
-    // A template directory that cannot be reconciled must not take the catalog down: the builtins
-    // and any user-authored templates are still perfectly serviceable without it.
+    // A template directory that cannot be reconciled must not take the catalog down: any
+    // repository-backed or user-authored templates are still perfectly serviceable without it.
     logger.warn('templates: could not reconcile the template directory', {
       error: err instanceof Error ? err.message : String(err),
     });
@@ -153,10 +152,10 @@ async function resyncTemplateSources(force = false): Promise<void> {
 }
 
 export default async function templatesRoutes(app: FastifyInstance): Promise<void> {
-  // Read routes seed the built-in catalog on first use so the API works even if boot seeding
-  // was skipped (e.g. the table was empty when the process started), then layer the files on top.
+  // Every read reconciles the repository and then the operator's own directory. The repository is
+  // where the templates live, so a read is what keeps the catalog populated; a local file layers on
+  // top of it.
   app.get('/templates', { preHandler: requireRole('viewer') }, async (req, reply) => {
-    await ensureBuiltinTemplates();
     await resyncTemplateSources();
     const { category, source } = listQuery.parse(req.query ?? {});
     const rows = await many<TemplateRow>(
@@ -170,7 +169,6 @@ export default async function templatesRoutes(app: FastifyInstance): Promise<voi
   });
 
   app.get('/templates/:slug', { preHandler: requireRole('viewer') }, async (req, reply) => {
-    await ensureBuiltinTemplates();
     await resyncTemplateSources();
     const { slug } = req.params as { slug: string };
     const row = await one<TemplateRow>('select * from templates where slug = $1', [slug]);
@@ -252,16 +250,14 @@ export default async function templatesRoutes(app: FastifyInstance): Promise<voi
       const message =
         row.source === 'file'
           ? 'this template is defined by a file on disk; remove the file to remove the template'
-          : row.source === 'remote'
-            ? 'this template comes from the template repository; remove it there to remove it here'
-            : 'built-in templates cannot be deleted';
+          : 'this template comes from the template repository; remove it there to remove it here';
       return sendError(reply, 409, 'conflict', message);
     }
     await query('delete from templates where slug = $1', [slug]);
     await auditFromRequest(req, 'template.delete', 'template', slug, { name: row.name });
-    // A template authored in the panel shadows a file, a repository template or a builtin of the
-    // same slug. With the row gone, the one underneath is what the catalog should be serving, and
-    // the reconciles are stamp-gated, so ask for them explicitly rather than waiting for something
+    // A template authored in the panel shadows a file or a repository template of the same slug.
+    // With the row gone, the one underneath is what the catalog should be serving, and the
+    // reconciles are stamp-gated, so ask for them explicitly rather than waiting for something
     // else to change the directory.
     await resyncTemplateSources(true);
     return reply.code(200).send({ ok: true });
@@ -271,7 +267,6 @@ export default async function templatesRoutes(app: FastifyInstance): Promise<voi
   // Readable by a viewer because it describes templates they can already list; reloading is an
   // admin action because it rewrites rows.
   app.get('/template-files', { preHandler: requireRole('viewer') }, async (req, reply) => {
-    await ensureBuiltinTemplates();
     await resyncTemplateSources();
     // The remote source rides along rather than getting a route of its own: the page wants both in
     // one answer, and they are the same question ("where else do templates come from?").

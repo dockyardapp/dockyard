@@ -25,7 +25,6 @@ import {
   TemplateValidationError,
 } from './schema.ts';
 import type { TemplateSpec, TemplateHealthcheck } from './schema.ts';
-import { builtinSpecBySlug } from './catalog.ts';
 import { slugify, containerName, volumeName } from '../stacks.ts';
 import type { StackRow } from '../stacks.ts';
 
@@ -57,18 +56,21 @@ export type DeployResult = {
   container: { id: string; name: string };
 };
 
-/** The stored spec wins (user edits / user templates); fall back to the built-in catalog. */
+/**
+ * The stored spec is the template.
+ *
+ * There is no compiled-in catalog to fall back to any more: a template reaches the row from the
+ * repository, a local file or the panel, and the row is the resolved result of those three. A slug
+ * with no stored row is simply not a template, and a stored spec that does not validate is reported
+ * rather than quietly swapped for a different definition of the same name.
+ */
 async function resolveSpec(slug: string): Promise<TemplateSpec | null> {
   const row = await one<{ spec: unknown }>('select spec from templates where slug = $1', [slug]);
-  if (row) {
-    const parsed = validateSpec(row.spec);
-    if (parsed.ok) return parsed.spec;
-    logger.warn('deploy: stored template spec invalid, falling back to builtin', {
-      slug,
-      errors: parsed.errors,
-    });
-  }
-  return builtinSpecBySlug(slug);
+  if (!row) return null;
+  const parsed = validateSpec(row.spec);
+  if (parsed.ok) return parsed.spec;
+  logger.warn('deploy: stored template spec is invalid', { slug, errors: parsed.errors });
+  return null;
 }
 
 function dockerHealthcheck(hc: TemplateHealthcheck): {

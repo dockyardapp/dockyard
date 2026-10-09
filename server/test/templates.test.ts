@@ -20,9 +20,13 @@ import {
   DockerError,
 } from '../src/docker/index.ts';
 import {
-  builtinTemplates,
-  syncBuiltinTemplates,
-} from '../src/templates/catalog.ts';
+  fixtureSpec,
+  readTemplateDir,
+  seedFixtureTemplates,
+  EXAMPLES_DIR,
+  CHECKOUT_DIR,
+} from './fixtures/templates.ts';
+import type { TemplateSpec } from '../src/templates/schema.ts';
 import {
   templateSpecSchema,
   validateSpec,
@@ -95,6 +99,9 @@ async function ensureImageAvailable(ref: string): Promise<void> {
 
 before(async () => {
   await runMigrations();
+  // The panel ships no templates, so the ones these tests render and deploy come from the fixtures.
+  // They stand in for what a pull would have put in the table.
+  await seedFixtureTemplates();
   await ensureImageAvailable('traefik/whoami:v1.11.0');
   await ensureImageAvailable('redis:7.4-alpine');
 });
@@ -125,34 +132,64 @@ after(async () => {
 // 1. Catalog integrity
 // ---------------------------------------------------------------------------
 
-test('builtin catalog: every spec validates, slugs are unique, >= 14 templates, all categories', () => {
-  const specs = builtinTemplates();
-  assert.ok(specs.length >= 14, `expected at least 14 templates, got ${specs.length}`);
+// The catalog is not in the code any more: it is the repository the panel pulls, so this reads the
+// specs where they live. `deploy/template-examples/` is in this repo and always checked. A checkout
+// of the templates repository next to this one is the full set, so the completeness checks need it
+// and say so and skip when it is absent, rather than passing on a subset.
+//
+// Each source is checked on its own. The two overlap on purpose: the repository carries the examples
+// as well, so a slug legitimately appears in both and only has to be unique within a source.
+test('every template the repository ships validates, with pinned tags and real paths', () => {
+  const sources: Array<[string, Array<Record<string, unknown>>]> = [
+    ['deploy/template-examples', readTemplateDir(EXAMPLES_DIR)],
+    ['the templates repository', readTemplateDir(CHECKOUT_DIR)],
+  ];
+  const found = sources.reduce((n, [, specs]) => n + specs.length, 0);
+  assert.ok(found > 0, 'no template files found to check');
 
-  const slugs = new Set<string>();
-  for (const spec of specs) {
-    const parsed = templateSpecSchema.safeParse(spec);
-    assert.ok(
-      parsed.success,
-      `spec "${spec.slug}" failed schema validation: ${
-        parsed.success ? '' : JSON.stringify(parsed.error.issues)
-      }`,
-    );
-    assert.ok(!slugs.has(spec.slug), `duplicate template slug: ${spec.slug}`);
-    slugs.add(spec.slug);
+  for (const [label, specs] of sources) {
+    const slugs = new Set<string>();
+    for (const spec of specs) {
+      const parsed = templateSpecSchema.safeParse(spec);
+      assert.ok(
+        parsed.success,
+        `${label}: spec "${String(spec.slug)}" failed schema validation: ${
+          parsed.success ? '' : JSON.stringify(parsed.error.issues)
+        }`,
+      );
+      assert.ok(!slugs.has(String(spec.slug)), `${label}: duplicate template slug: ${String(spec.slug)}`);
+      slugs.add(String(spec.slug));
 
-    // real image + pinned tag, real absolute volume paths, real container ports
-    assert.ok(spec.image.length > 0 && !spec.image.includes(':'), `${spec.slug}: image must not carry a tag`);
-    assert.ok(spec.tag.length > 0, `${spec.slug}: missing tag`);
-    assert.notEqual(spec.tag, 'latest', `${spec.slug}: tag should be pinned, not "latest"`);
-    for (const v of spec.volumes) {
-      assert.ok(v.container.startsWith('/'), `${spec.slug}: volume path not absolute: ${v.container}`);
-    }
-    for (const p of spec.ports) {
-      assert.ok(Number.isInteger(p.container) && p.container > 0 && p.container <= 65535);
+      // real image + pinned tag, real absolute volume paths, real container ports
+      const image = String(spec.image);
+      const tag = String(spec.tag);
+      assert.ok(image.length > 0 && !image.includes(':'), `${label}: ${spec.slug}: image must not carry a tag`);
+      assert.ok(tag.length > 0, `${label}: ${spec.slug}: missing tag`);
+      assert.notEqual(tag, 'latest', `${label}: ${spec.slug}: tag should be pinned, not "latest"`);
+      for (const v of (spec.volumes ?? []) as Array<{ container: string }>) {
+        assert.ok(
+          v.container.startsWith('/'),
+          `${label}: ${spec.slug}: volume path not absolute: ${v.container}`,
+        );
+      }
+      for (const p of (spec.ports ?? []) as Array<{ container: number }>) {
+        assert.ok(Number.isInteger(p.container) && p.container > 0 && p.container <= 65535);
+      }
     }
   }
+});
 
+test('the repository carries every required template and every category', () => {
+  const specs = readTemplateDir(CHECKOUT_DIR);
+  if (specs.length === 0) {
+    assert.ok(
+      true,
+      'no templates-repository checkout next to this one; skipping the completeness check',
+    );
+    return;
+  }
+
+  const slugs = new Set(specs.map((s) => String(s.slug)));
   // every required application is present
   for (const slug of REQUIRED_TEMPLATES) {
     assert.ok(slugs.has(slug), `required template missing: ${slug}`);
@@ -164,7 +201,7 @@ test('builtin catalog: every spec validates, slugs are unique, >= 14 templates, 
 });
 
 test('validateSpec rejects malformed specs and accepts a good one', () => {
-  const good = builtinTemplates().find((s) => s.slug === 'redis');
+  const good = fixtureSpec('redis') as unknown as TemplateSpec;
   assert.ok(good);
   assert.deepEqual(validateSpec(good), { ok: true, spec: good });
 
@@ -186,7 +223,7 @@ test('validateSpec rejects malformed specs and accepts a good one', () => {
 // ---------------------------------------------------------------------------
 
 test('renderTemplate: defaults applied, required-missing reported, overrides parsed, secrets masked', () => {
-  const pg = builtinTemplates().find((s) => s.slug === 'postgres');
+  const pg = fixtureSpec('postgres') as unknown as TemplateSpec;
   assert.ok(pg);
 
   // defaults + required supplied
@@ -243,52 +280,12 @@ test('renderTemplate: defaults applied, required-missing reported, overrides par
 });
 
 // ---------------------------------------------------------------------------
-// 3. syncBuiltinTemplates
+// 3. Seeding
 // ---------------------------------------------------------------------------
-
-test('syncBuiltinTemplates upserts builtins, preserves created_at, never overwrites a user row', async () => {
-  const first = await syncBuiltinTemplates();
-  assert.ok(first.total >= 14);
-
-  const beforeRow = await one<{ created_at: unknown }>(
-    'select created_at from templates where slug = $1',
-    ['postgres'],
-  );
-  assert.ok(beforeRow);
-
-  // plant a USER row using a builtin slug
-  await query(
-    `insert into templates (slug, name, category, icon, description, spec, source)
-     values ('nginx', 'My Nginx', 'web', '🌐', 'custom', '{}'::jsonb, 'user')
-     on conflict (slug) do update set source = 'user', name = 'My Nginx', spec = '{}'::jsonb`,
-  );
-
-  const second = await syncBuiltinTemplates();
-  assert.ok(second.skipped >= 1, 'the user row should have been skipped');
-
-  const nginx = await one<{ name: string; source: string }>(
-    'select name, source from templates where slug = $1',
-    ['nginx'],
-  );
-  assert.equal(nginx?.source, 'user');
-  assert.equal(nginx?.name, 'My Nginx', 'sync must not overwrite a user row');
-
-  const afterRow = await one<{ created_at: unknown }>(
-    'select created_at from templates where slug = $1',
-    ['postgres'],
-  );
-  assert.equal(
-    String(afterRow?.created_at),
-    String(beforeRow?.created_at),
-    'sync must not clobber a builtin row created_at',
-  );
-
-  // restore the builtin nginx row
-  await query("delete from templates where slug = 'nginx' and source = 'user'");
-  await syncBuiltinTemplates();
-  const restored = await one<{ source: string }>('select source from templates where slug = $1', ['nginx']);
-  assert.equal(restored?.source, 'builtin');
-});
+//
+// There is nothing to sync out of the code any more. `seedFixtureTemplates()` is what puts the rows
+// these tests use in the table, and the reconciles that own the real catalog are covered in
+// `template-files.test.ts` and `template-remote.test.ts`.
 
 // ---------------------------------------------------------------------------
 // 4. Real deployment onto the Docker daemon

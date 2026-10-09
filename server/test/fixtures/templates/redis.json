@@ -1,0 +1,37 @@
+{
+  "schemaVersion": 1,
+  "slug": "redis",
+  "name": "Redis",
+  "category": "database",
+  "icon": "🧱",
+  "description": "In-memory key/value store with optional persistence.",
+  "image": "redis",
+  "tag": "7.4-alpine",
+  "ports": [
+    {
+      "container": 6379,
+      "label": "Redis",
+      "defaultHost": 6379
+    }
+  ],
+  "env": [],
+  "volumes": [
+    {
+      "container": "/data",
+      "label": "Data"
+    }
+  ],
+  "restartPolicy": "unless-stopped",
+  "healthcheck": {
+    "test": [
+      "CMD",
+      "redis-cli",
+      "ping"
+    ],
+    "intervalSec": 10,
+    "timeoutSec": 3,
+    "retries": 5
+  },
+  "notes": "Runs with the default configuration (no auth). Enable persistence via a custom command if needed.",
+  "docsUrl": "https://hub.docker.com/_/redis"
+}

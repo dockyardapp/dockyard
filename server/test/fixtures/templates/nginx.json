@@ -1,0 +1,35 @@
+{
+  "schemaVersion": 1,
+  "slug": "nginx",
+  "name": "nginx",
+  "category": "web",
+  "icon": "🌐",
+  "description": "High-performance HTTP server and reverse proxy.",
+  "image": "nginx",
+  "tag": "1.27-alpine",
+  "ports": [
+    {
+      "container": 80,
+      "label": "HTTP",
+      "defaultHost": 8080
+    }
+  ],
+  "env": [],
+  "volumes": [
+    {
+      "container": "/usr/share/nginx/html",
+      "label": "Web root"
+    }
+  ],
+  "restartPolicy": "unless-stopped",
+  "healthcheck": {
+    "test": [
+      "CMD-SHELL",
+      "wget -q -O /dev/null http://127.0.0.1/ || exit 1"
+    ],
+    "intervalSec": 10,
+    "timeoutSec": 3,
+    "retries": 5
+  },
+  "docsUrl": "https://hub.docker.com/_/nginx"
+}

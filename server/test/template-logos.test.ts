@@ -1,42 +1,104 @@
-// Dockyard — template logo coverage test.
+// Dockyard — template logo tests.
 //
-// The templates page shows the real brand mark of whatever a template deploys.
-// That only holds while every built-in template has one, so this fails when a
-// template is added without a mark, rather than letting it quietly fall back to
-// an emoji in production.
+// The templates page shows the deployed product's real brand mark where one is vendored, and falls
+// back to the template's own `icon` where one is not. The panel compiles no catalog in any more: the
+// templates come from the repository at github.com/dockyardapp/dockyard-templates, which carries
+// products beyond the ones with a mark (gitea, caddy, syncthing and friends deliberately have none).
+// So there is no longer any such thing as "every shipped template must have a mark".
+//
+// What is still worth holding down:
+//
+//   * the generated module is well-formed, so a bad regeneration cannot ship a broken mark
+//   * a mark resolves by slug and by image, so the same product is decorated whichever source served
+//     it
+//   * no mark is left behind for a product the repository no longer ships. That needs the repository
+//     itself, so it runs against a checkout sitting next to this one and says so when it cannot.
 //
 //   export PATH=/root/.hermes/node/bin:$PATH
 //   node --test server/test/template-logos.test.ts
 
+import fs from 'node:fs';
+import path from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
 
-import { builtinTemplates } from '../src/templates/catalog.ts';
 import { logoFor, TEMPLATE_LOGOS } from '../../web/src/components/templateLogos.ts';
 
-describe('template logos', () => {
-  it('has a real brand mark for every built-in template', () => {
-    const missing: string[] = [];
+const here = path.dirname(fileURLToPath(import.meta.url));
+const repoRoot = path.resolve(here, '..', '..');
 
-    for (const spec of builtinTemplates()) {
-      if (!logoFor({ slug: spec.slug, spec: { image: spec.image } })) {
-        missing.push(`${spec.slug} (${spec.name}, image ${spec.image})`);
-      }
+type Spec = { slug: string; image: string };
+
+/** Every template in a directory, flattened out of any of the three accepted file shapes. A file
+ *  that will not parse contributes nothing: a malformed template is template-files.test.ts's
+ *  business. */
+function specsIn(dir: string): Spec[] {
+  if (!fs.existsSync(dir)) return [];
+  const out: Spec[] = [];
+  for (const entry of fs.readdirSync(dir)) {
+    if (!/\.json$/i.test(entry) || entry.startsWith('.') || entry.startsWith('_')) continue;
+    let parsed: unknown;
+    try {
+      parsed = JSON.parse(fs.readFileSync(path.join(dir, entry), 'utf8'));
+    } catch {
+      continue;
     }
+    const list = Array.isArray(parsed)
+      ? parsed
+      : Array.isArray((parsed as { templates?: unknown }).templates)
+        ? (parsed as { templates: unknown[] }).templates
+        : [parsed];
+    for (const candidate of list) {
+      const s = candidate as Partial<Spec>;
+      if (s && typeof s.slug === 'string' && typeof s.image === 'string') out.push(s as Spec);
+    }
+  }
+  return out;
+}
 
-    assert.deepEqual(
-      missing,
-      [],
-      `no brand mark for: ${missing.join(', ')}. Add the product to the generator's BRAND map and regenerate.`,
-    );
+const examples = specsIn(path.join(repoRoot, 'deploy', 'template-examples'));
+const checkout = specsIn(path.join(repoRoot, '..', 'dockyard-templates', 'templates'));
+
+describe('template logos', () => {
+  it('carries a well-formed mark for every product it knows', () => {
+    const keys = Object.keys(TEMPLATE_LOGOS);
+    assert.ok(keys.length > 0, 'the logo map is empty');
+
+    for (const [key, logo] of Object.entries(TEMPLATE_LOGOS)) {
+      assert.ok(logo.title.length > 0, `${key}: mark has no title`);
+      assert.match(logo.path, /^[Mm]/, `${key}: path does not look like SVG path data`);
+      assert.match(logo.fill, /^#[0-9a-fA-F]{6}$/, `${key}: fill is not a six-digit hex colour`);
+      assert.match(
+        logo.viewBox,
+        /^-?[\d.]+ -?[\d.]+ [\d.]+ [\d.]+$/,
+        `${key}: viewBox is not four numbers`,
+      );
+      assert.ok(logo.aspect > 0, `${key}: aspect must be positive`);
+    }
   });
 
-  it('does not carry marks for products the catalog no longer ships', () => {
-    // Keeps the generated module from growing stale: every mark should still be
-    // reachable from a template that exists.
+  it('matches a template by its slug and by its image', () => {
+    assert.equal(logoFor({ slug: 'postgres', spec: { image: 'postgres' } })?.title, 'PostgreSQL');
+    // A slug that means nothing still matches on the image path, which is what decorates a template
+    // that came from the repository under a slug the map has never heard of.
+    assert.equal(logoFor({ slug: 'not-a-real-slug', spec: { image: 'postgres' } })?.title, 'PostgreSQL');
+  });
+
+  it('does not carry marks for products no template uses', () => {
+    if (checkout.length === 0) {
+      assert.ok(
+        true,
+        'no templates-repository checkout next to this one; skipping the staleness check',
+      );
+      return;
+    }
+
+    // Keeps the generated module from growing stale: every mark should still be reachable from a
+    // template that exists.
     const reachable = new Set<string>();
-    for (const spec of builtinTemplates()) {
-      const logo = logoFor({ slug: spec.slug, spec: { image: spec.image } });
+    for (const s of [...examples, ...checkout]) {
+      const logo = logoFor({ slug: s.slug, spec: { image: s.image } });
       if (logo) reachable.add(logo.title);
     }
 
@@ -45,12 +107,5 @@ describe('template logos', () => {
       .filter((title) => !reachable.has(title));
 
     assert.deepEqual(orphans, [], `marks no template uses: ${orphans.join(', ')}`);
-  });
-
-  it('matches a template by its image, not only its slug', () => {
-    // The built-ins are slug-matched, so check the image path explicitly with a
-    // slug that means nothing.
-    const logo = logoFor({ slug: 'not-a-real-slug', spec: { image: 'postgres' } });
-    assert.equal(logo?.title, 'PostgreSQL');
   });
 });

@@ -29,7 +29,6 @@ import { closePool, one, query } from '../src/db/pool.ts';
 import { hashPassword } from '../src/auth/password.ts';
 import { createSession } from '../src/auth/sessions.ts';
 import { config } from '../src/config.ts';
-import { builtinTemplates, syncBuiltinTemplates } from '../src/templates/catalog.ts';
 import type { TemplateSpec } from '../src/templates/schema.ts';
 import {
   maybeSyncRemoteTemplates,
@@ -197,7 +196,6 @@ before(async () => {
 
 after(async () => {
   await cleanupSlugs();
-  await syncBuiltinTemplates();
   Object.assign(config, ORIGINAL);
   resetRemoteTemplates();
   resetTemplateFileCache();
@@ -563,30 +561,59 @@ test('a template edited in the panel is never overwritten by a pull', async () =
   assert.equal(row?.name, 'Authored here');
 });
 
-test('the repository overrides a builtin of the same slug', async () => {
+test('a pull does not clobber a local file of the same slug', async () => {
   resetUpstream();
   await cleanupSlugs();
   resetRemoteTemplates();
   fs.rmSync(config.templateRemoteDir, { recursive: true, force: true });
 
-  const builtin = builtinTemplates()[0];
+  // The repository is the lowest-precedence source, so it outranks nothing: a local file is the
+  // operator's own intent and a pull must leave it alone.
+  const slug = `${PREFIX}-local`;
+  const localSpec = {
+    schemaVersion: 1,
+    slug,
+    name: 'From a file',
+    category: 'devtools',
+    icon: 'x',
+    description: 'a local file',
+    image: 'traefik/whoami',
+    tag: 'file-tag',
+    ports: [],
+    env: [],
+    volumes: [],
+    restartPolicy: 'unless-stopped',
+  };
+
   try {
-    publish('templates/builtin.json', { ...builtin, tag: 'repo-override-tag', name: 'Overridden by the repo' });
+    await query(
+      `insert into templates (slug, name, category, icon, description, spec, source)
+       values ($1, $2, $3, $4, $5, $6::jsonb, 'file')`,
+      [
+        slug,
+        localSpec.name,
+        localSpec.category,
+        localSpec.icon,
+        localSpec.description,
+        JSON.stringify(localSpec),
+      ],
+    );
+
+    publish(`templates/${slug}.json`, { ...localSpec, tag: 'repo-tag', name: 'From the repo' });
     const { reconcile } = await syncRemoteTemplates();
 
-    assert.deepEqual(reconcile.overrides, [builtin.slug]);
+    assert.deepEqual(reconcile.overrides, [], 'the repository outranks nothing');
     const row = await one<{ name: string; source: string; tag: string }>(
       'select name, source, spec->>$1 as tag from templates where slug = $2',
-      ['tag', builtin.slug],
+      ['tag', slug],
     );
-    assert.equal(row?.source, 'remote');
-    assert.equal(row?.name, 'Overridden by the repo');
-    assert.equal(row?.tag, 'repo-override-tag');
+    assert.equal(row?.source, 'file', 'a pull must not take over a local file');
+    assert.equal(row?.name, 'From a file');
+    assert.equal(row?.tag, 'file-tag');
   } finally {
-    upstream.files.delete('templates/builtin.json');
+    upstream.files.delete(`templates/${slug}.json`);
     resetRemoteTemplates();
-    await query('delete from templates where slug = $1', [builtin.slug]);
-    await syncBuiltinTemplates();
+    await query('delete from templates where slug = $1', [slug]);
   }
 });
 

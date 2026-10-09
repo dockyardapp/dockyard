@@ -56,8 +56,8 @@ export default defineConfig({
       // production). Raise it here rather than weakening the shipped value.
       DOCKYARD_LOGIN_RATE_MAX: '500',
       // The template repository is a network dependency and this suite must not have any. Off here,
-      // so the catalog is the built-in one plus whatever a test drops on disk. The repository source
-      // has its own tests, against a local server standing in for GitHub.
+      // so the catalog is whatever the spec seeds into data/templates before the run. The repository
+      // source has its own tests, against a local server standing in for GitHub.
       DOCKYARD_TEMPLATES_REPO: '',
     },
   },

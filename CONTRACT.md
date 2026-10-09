@@ -58,7 +58,7 @@ dockyard/
       ws/                logs.ts stats.ts events.ts
       tunnels/           manager.ts supervisor.ts quick.ts named.ts localtunnel.ts url-parse.ts
       cloudflare/        api.ts
-      templates/         schema.ts catalog.ts engine.ts
+      templates/         schema.ts engine.ts files.ts remote.ts
     test/                *.test.ts  mock-docker.ts
   web/
     index.html vite.config.ts tsconfig.json
@@ -163,7 +163,7 @@ create table if not exists templates (
   icon text not null default 'package',
   description text not null default '',
   spec jsonb not null,
-  source text not null default 'user' check (source in ('builtin','user')),
+  source text not null default 'user' check (source in ('user','file','remote')),
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now()
 );
@@ -389,7 +389,7 @@ The first user created is `admin`.
 | GET | `/api/templates/:slug` | – | `Template` | viewer |
 | POST | `/api/templates` | `{spec}` | `Template` 201 | operator |
 | PATCH | `/api/templates/:slug` | `{spec}` | `Template` | operator |
-| DELETE | `/api/templates/:slug` | – | `{ok:true}` (builtin/file → 409) | admin |
+| DELETE | `/api/templates/:slug` | – | `{ok:true}` (file/remote → 409) | admin |
 | POST | `/api/templates/:slug/deploy` | `{name, values:{}}` | `{stack, container:{id,name}}` 201 | operator |
 | GET | `/api/template-files` | – | `TemplateFilesStatus & {remote: TemplateRemoteStatus}` | viewer |
 | POST | `/api/template-files/reload` | – | `TemplateFileSync & {status}` | admin |
@@ -480,7 +480,7 @@ check needs `DOCKYARD_UPDATE_TOKEN`; opening the repository removes that need.
 `Template`:
 ```ts
 { id: string; slug: string; name: string; category: string; icon: string; description: string;
-  source: 'builtin'|'user'; spec: TemplateSpec; created_at: string; updated_at: string }
+  source: 'user'|'file'|'remote'; spec: TemplateSpec; created_at: string; updated_at: string }
 ```
 
 `Tunnel`:
@@ -617,24 +617,23 @@ Shared, frozen: `package.json` files, `tsconfig.json` files, `vite.config.ts`, `
 
 ### 10.0 Where a template comes from
 
-`Template.source` is one of four values, and `GET /api/templates?source=` filters on it:
+`Template.source` is one of three values, and `GET /api/templates?source=` filters on it:
 
 | source | meaning |
 | --- | --- |
-| `builtin` | compiled into the image, from `templates/catalog.ts` |
-| `file` | a `*.json` file in `DOCKYARD_TEMPLATE_DIR` (default `<root>/data/templates`) |
 | `remote` | a `*.json` file pulled from `DOCKYARD_TEMPLATES_REPO` into `DOCKYARD_TEMPLATES_DIR` |
+| `file` | a `*.json` file in `DOCKYARD_TEMPLATE_DIR` (default `<root>/data/templates`) |
 | `user` | authored in the panel through `POST`/`PATCH /api/templates` |
 
-The point of `file` is that the directory is a bind mount, so an operator adds a template by
-dropping a file on the host. No rebuild, no restart, no release. `remote` is the same idea with the
-directory supplied for you: the panel fetches a public repository of template files, caches it, and
-reconciles the table against the cache, so a template can be added or corrected once, centrally,
-instead of on every install.
+**Nothing is compiled into the panel.** The repository is the source of truth, and `remote` is where a
+fresh install gets its catalog from. `file` is the same idea with the directory under the operator's
+own hand: it is a bind mount, so adding a template is dropping a file on the host, with no rebuild,
+no restart and no release.
 
-Precedence, highest first: `user`, `file`, `remote`, `builtin`. A file therefore retags a builtin by
-claiming its slug, and removing the file brings the builtin back. A `file` row outranks a `remote`
-one, and neither ever overwrites a `user` row; that is reported as skipped instead.
+Precedence, highest first: `user`, `file`, `remote`. A file therefore retags a repository template by
+claiming its slug, and removing the file brings the repository's copy back on the pull that follows.
+Neither ever overwrites a `user` row; that is reported as skipped instead. A `remote` reconcile
+outranks nothing, so a pull can never undo local work.
 
 Reconciliation is `templates/files.ts`, called from the read routes behind a directory stamp, so
 an unchanged directory costs one `readdir`. A file is validated with the same
@@ -727,12 +726,12 @@ export function renderTemplate(spec: TemplateSpec, values: Record<string, string
 with `validation_error` listing them. Values keyed by env `key`; port host overrides keyed
 `port:<container>`; volume host overrides keyed `volume:<container>`.
 
-`templates/catalog.ts`: `export function builtinTemplates(): TemplateSpec[]` — **at least 14 real,
-correct templates**, one per category at minimum. Ship: postgres, mysql, redis, mongodb, adminer,
-nginx, httpd, wordpress(+mysql note), node-app, python-app, uptime-kuma, grafana, prometheus,
-minio, n8n, whoami. Real image names, real env var names, real ports, real volume paths. No invented
-images. Add `syncBuiltinTemplates()` that upserts them into the `templates` table with
-`source='builtin'` (never overwriting a user row with the same slug).
+There is no `templates/catalog.ts`. The catalog is the repository at
+`github.com/dockyardapp/dockyard-templates`, pulled by `templates/remote.ts`: one JSON file per
+template under `templates/`, and the panel ships none of them. Adding a template to every Dockyard in
+the world is a pull request there, not a release. Real image names, real env var names, real ports,
+real volume paths: no invented images. `server/test/templates.test.ts` validates whatever the
+repository holds against `templateSpecSchema`.
 
 ```ts
 // templates/engine.ts

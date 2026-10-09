@@ -1,0 +1,40 @@
+{
+  "schemaVersion": 1,
+  "slug": "grafana",
+  "name": "Grafana",
+  "category": "monitoring",
+  "icon": "📊",
+  "description": "Dashboards and observability UI.",
+  "image": "grafana/grafana",
+  "tag": "11.4.0",
+  "ports": [
+    {
+      "container": 3000,
+      "label": "Web UI",
+      "defaultHost": 3000
+    }
+  ],
+  "env": [
+    {
+      "key": "GF_SECURITY_ADMIN_USER",
+      "label": "Admin user",
+      "default": "admin"
+    },
+    {
+      "key": "GF_SECURITY_ADMIN_PASSWORD",
+      "label": "Admin password",
+      "default": "admin",
+      "secret": true,
+      "description": "Change this from the default before exposing Grafana."
+    }
+  ],
+  "volumes": [
+    {
+      "container": "/var/lib/grafana",
+      "label": "Data"
+    }
+  ],
+  "restartPolicy": "unless-stopped",
+  "notes": "Default login is admin / the GF_SECURITY_ADMIN_PASSWORD value (default \"admin\"). Change it.",
+  "docsUrl": "https://hub.docker.com/r/grafana/grafana"
+}

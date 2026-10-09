@@ -1,0 +1,21 @@
+{
+  "schemaVersion": 1,
+  "slug": "whoami",
+  "name": "whoami",
+  "category": "devtools",
+  "icon": "🪪",
+  "description": "Tiny HTTP server that echoes request headers, useful for testing proxies and tunnels.",
+  "image": "traefik/whoami",
+  "tag": "v1.11.0",
+  "ports": [
+    {
+      "container": 80,
+      "label": "HTTP",
+      "defaultHost": 8080
+    }
+  ],
+  "env": [],
+  "volumes": [],
+  "restartPolicy": "unless-stopped",
+  "docsUrl": "https://github.com/traefik/whoami"
+}

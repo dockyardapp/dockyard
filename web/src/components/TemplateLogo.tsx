@@ -1,10 +1,11 @@
 /**
  * The real brand mark for a template.
  *
- * The built-in templates deploy software that has a logo of its own, and a card
- * that shows PostgreSQL's elephant or Grafana's flame is scannable in a way that
- * an emoji stand-in is not. Marks come from `templateLogos.ts`, matched on the
- * template's slug or its image name.
+ * The templates deploy software that has a logo of its own, and a card that shows
+ * PostgreSQL's elephant or Grafana's flame is scannable in a way that an emoji
+ * stand-in is not. Marks come from `templateLogos.ts`, matched on the template's
+ * slug or its image name. A product with no mark falls back to the template's own
+ * icon.
  *
  * Marks are fitted to a slot rather than drawn in a square box. The vendor
  * normalises every mark to fill either the width or the height of a 24x24 box,

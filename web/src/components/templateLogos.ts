@@ -1,4 +1,4 @@
-// Real brand marks for the built-in templates.
+// Real brand marks for the products Dockyard's templates deploy.
 //
 // GENERATED FILE - do not edit by hand.
 //   python3 scripts/gen-template-logos.py <path-to-node_modules/simple-icons>

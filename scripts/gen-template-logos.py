@@ -133,7 +133,7 @@ for si_slug, (tpl_slug, title) in BRAND.items():
                     f"{m['x']} {m['y']} {m['w']} {m['h']}", path[0], m["aspect"]))
 
 lines = []
-lines.append("// Real brand marks for the built-in templates.")
+lines.append("// Real brand marks for the products Dockyard's templates deploy.")
 lines.append("//")
 lines.append("// GENERATED FILE - do not edit by hand.")
 lines.append("//   python3 scripts/gen-template-logos.py <path-to-node_modules/simple-icons>")

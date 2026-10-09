@@ -1,0 +1,26 @@
+{
+  "schemaVersion": 1,
+  "slug": "uptime-kuma",
+  "name": "Uptime Kuma",
+  "category": "monitoring",
+  "icon": "📈",
+  "description": "Self-hosted uptime monitoring with status pages and alerts.",
+  "image": "louislam/uptime-kuma",
+  "tag": "1.23.16",
+  "ports": [
+    {
+      "container": 3001,
+      "label": "Web UI",
+      "defaultHost": 3001
+    }
+  ],
+  "env": [],
+  "volumes": [
+    {
+      "container": "/app/data",
+      "label": "Data"
+    }
+  ],
+  "restartPolicy": "unless-stopped",
+  "docsUrl": "https://github.com/louislam/uptime-kuma"
+}

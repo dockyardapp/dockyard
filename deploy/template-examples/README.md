@@ -29,8 +29,9 @@ points at `pack-homelab.json[1]` rather than at the whole file.
   is an error, and the first file in name order wins.
 - A leading `.` or `_` on the file name parks it. The panel ignores it and lists it as parked,
   which is how you switch a template off without deleting it.
-- A file wins over a built-in template with the same slug, so you can retag `postgres` or
-  change its environment without touching the code. Removing the file brings the built-in back.
+- A file wins over the repository's copy of the same slug, so you can retag `postgres` or
+  change its environment without touching the repository. Removing the file lets the
+  repository's copy come back on the next pull.
 - A file never overwrites a template you edited in the panel. The panel's version stays, and
   the file is reported as skipped.
 - Removing a file removes the template it defined.

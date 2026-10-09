@@ -1,0 +1,52 @@
+{
+  "schemaVersion": 1,
+  "slug": "mongodb",
+  "name": "MongoDB",
+  "category": "database",
+  "icon": "🍃",
+  "description": "MongoDB document database.",
+  "image": "mongo",
+  "tag": "7.0",
+  "ports": [
+    {
+      "container": 27017,
+      "label": "MongoDB",
+      "defaultHost": 27017
+    }
+  ],
+  "env": [
+    {
+      "key": "MONGO_INITDB_ROOT_USERNAME",
+      "label": "Root user",
+      "default": "root"
+    },
+    {
+      "key": "MONGO_INITDB_ROOT_PASSWORD",
+      "label": "Root password",
+      "required": true,
+      "secret": true,
+      "description": "Required to enable authentication on first start."
+    }
+  ],
+  "volumes": [
+    {
+      "container": "/data/db",
+      "label": "Data"
+    }
+  ],
+  "restartPolicy": "unless-stopped",
+  "healthcheck": {
+    "test": [
+      "CMD",
+      "mongosh",
+      "--quiet",
+      "--eval",
+      "db.adminCommand('ping')"
+    ],
+    "intervalSec": 10,
+    "timeoutSec": 5,
+    "retries": 10
+  },
+  "notes": "Setting both the root user and password enables authentication on first start.",
+  "docsUrl": "https://hub.docker.com/_/mongo"
+}

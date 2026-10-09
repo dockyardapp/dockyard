@@ -153,13 +153,14 @@ export type TemplateSpec = {
 
 /**
  * Where a template came from.
- *   builtin — compiled into the image (the shipped catalog)
+ *   remote  — a `*.json` file pulled from the template repository into a local cache. This is the
+ *             source of truth: nothing is compiled into the panel, so a fresh install is populated
+ *             by a pull.
  *   file    — a `*.json` file in the template directory, which is a bind mount, so adding one
- *             needs no rebuild and no restart
- *   remote  — a `*.json` file pulled from the template repository into a local cache
- *   user    — authored in the panel
+ *             needs no rebuild and no restart. Outranks the repository.
+ *   user    — authored in the panel. Outranks everything.
  */
-export type TemplateSource = 'builtin' | 'user' | 'file' | 'remote';
+export type TemplateSource = 'user' | 'file' | 'remote';
 
 export type Template = {
   id: string;
@@ -192,14 +193,12 @@ export type TemplateFileSync = {
   templates: number;
   inserted: number;
   updated: number;
-  /** Slugs that shadow a builtin of the same slug. */
+  /** Slugs that replaced a row belonging to a lower-precedence source. */
   overrides: string[];
   /** Slugs whose row is authored in the panel, so this source was ignored for them. */
   skippedUser: string[];
   /** Rows removed because their file is gone. */
   removed: string[];
-  /** Builtins that came back after the file shadowing them went away. */
-  restored: string[];
   errors: Array<{ file: string; errors: string[] }>;
 };
 

@@ -112,7 +112,7 @@ export function TemplatesPage() {
   const removeTemplate = async (t: Template) => {
     const ok = await confirm({
       title: `Delete template ${t.name}?`,
-      body: 'This removes the template permanently. Templates that come from a file are removed by deleting the file, and built-in templates cannot be deleted.',
+      body: 'This removes the template permanently. A template that comes from the repository or from a file is removed at its source instead: edit it there, or delete the file.',
       confirmLabel: 'Delete template',
       danger: true,
     });
@@ -181,7 +181,6 @@ export function TemplatesPage() {
         <div className="spacer" style={{ flex: 1 }} />
         <select value={source} onChange={(e) => setSource(e.target.value as typeof source)} aria-label="Filter by source" style={{ width: 'auto' }}>
           <option value="all">all sources</option>
-          <option value="builtin">built-in</option>
           <option value="file">from a file</option>
           <option value="remote">from the repo</option>
           <option value="user">user</option>
@@ -230,7 +229,6 @@ export function TemplatesPage() {
                   </div>
                   <div className="row" style={{ gap: 'var(--space-2)', marginTop: 2 }}>
                     <span className="tag">{t.category}</span>
-                    {t.source === 'builtin' ? <span className="tag">built-in</span> : null}
                     {t.source === 'file' ? (
                       <span className="tag" title="Loaded from a JSON file in the template directory">
                         from a file
@@ -331,7 +329,7 @@ function describeSync(report: TemplateFileSync): string {
   if (report.inserted > 0) parts.push(`${report.inserted} added`);
   if (report.updated > 0) parts.push(`${report.updated} updated`);
   if (report.removed.length > 0) parts.push(`${report.removed.length} removed`);
-  if (report.overrides.length > 0) parts.push(`${report.overrides.length} replacing a built-in`);
+  if (report.overrides.length > 0) parts.push(`${report.overrides.length} overriding the repo copy`);
   if (report.skippedUser.length > 0) parts.push(`${report.skippedUser.length} skipped, edited in the panel`);
   if (report.errors.length > 0) parts.push(`${report.errors.length} rejected`);
   return parts.length === 0

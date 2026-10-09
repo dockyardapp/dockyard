@@ -1,0 +1,54 @@
+{
+  "schemaVersion": 1,
+  "slug": "postgres",
+  "name": "PostgreSQL",
+  "category": "database",
+  "icon": "🐘",
+  "description": "The PostgreSQL object-relational database.",
+  "image": "postgres",
+  "tag": "16-alpine",
+  "ports": [
+    {
+      "container": 5432,
+      "label": "PostgreSQL",
+      "defaultHost": 5432
+    }
+  ],
+  "env": [
+    {
+      "key": "POSTGRES_PASSWORD",
+      "label": "Superuser password",
+      "required": true,
+      "secret": true,
+      "description": "Required. Password for the postgres superuser."
+    },
+    {
+      "key": "POSTGRES_USER",
+      "label": "Superuser",
+      "default": "postgres"
+    },
+    {
+      "key": "POSTGRES_DB",
+      "label": "Database",
+      "default": "postgres"
+    }
+  ],
+  "volumes": [
+    {
+      "container": "/var/lib/postgresql/data",
+      "label": "Data"
+    }
+  ],
+  "restartPolicy": "unless-stopped",
+  "healthcheck": {
+    "test": [
+      "CMD-SHELL",
+      "pg_isready -U \"${POSTGRES_USER:-postgres}\""
+    ],
+    "intervalSec": 10,
+    "timeoutSec": 5,
+    "retries": 5
+  },
+  "notes": "POSTGRES_PASSWORD is required and must be set before deploying.",
+  "docsUrl": "https://hub.docker.com/_/postgres"
+}

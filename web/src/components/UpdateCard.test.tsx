@@ -36,7 +36,7 @@ function fixture(over: Partial<UpdateStatus> = {}): UpdateStatus {
     },
     check: {
       checkedAt: new Date().toISOString(),
-      repo: 'EliasL-git/dockyard',
+      repo: 'dockyardapp/dockyard',
       branch: 'main',
       authenticated: false,
       status: 'current',
@@ -49,7 +49,7 @@ function fixture(over: Partial<UpdateStatus> = {}): UpdateStatus {
         subject: 'the tip',
         author: 'elias',
         date: '2026-10-09T06:00:00.000Z',
-        url: `https://github.com/EliasL-git/dockyard/commit/${SHA}`,
+        url: `https://github.com/dockyardapp/dockyard/commit/${SHA}`,
       },
       commits: [],
       rateLimit: { remaining: 59, limit: 60, resetAt: null },
@@ -83,9 +83,9 @@ describe('UpdateCard', () => {
     expect(row).toHaveTextContent('v0.2.0 · aaaaaaa');
     expect(within(row).getByRole('link', { name: 'aaaaaaa' })).toHaveAttribute(
       'href',
-      `https://github.com/EliasL-git/dockyard/commit/${SHA}`,
+      `https://github.com/dockyardapp/dockyard/commit/${SHA}`,
     );
-    expect(screen.getByText('EliasL-git/dockyard')).toBeInTheDocument();
+    expect(screen.getByText('dockyardapp/dockyard')).toBeInTheDocument();
   });
 
   it('says so plainly when the build is the tip of the branch', async () => {
@@ -110,7 +110,7 @@ describe('UpdateCard', () => {
               subject: 'tunnels: add a third exposure mode',
               author: 'elias',
               date: '2026-10-09T07:00:00.000Z',
-              url: `https://github.com/EliasL-git/dockyard/commit/${NEW_SHA}`,
+              url: `https://github.com/dockyardapp/dockyard/commit/${NEW_SHA}`,
             },
             {
               sha: 'c'.repeat(40),
@@ -118,7 +118,7 @@ describe('UpdateCard', () => {
               subject: 'ui: stop tables clipping their columns',
               author: 'elias',
               date: '2026-10-09T06:30:00.000Z',
-              url: 'https://github.com/EliasL-git/dockyard/commit/ccccccc',
+              url: 'https://github.com/dockyardapp/dockyard/commit/ccccccc',
             },
           ],
         },

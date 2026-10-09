@@ -65,7 +65,7 @@ server/src/
   ws/           log tail, live stats and a global event stream
   tunnels/      tunnel supervision: cloudflared (quick, named) and localtunnel
   cloudflare/   Cloudflare API v4 client
-  templates/    template spec, built-in catalog, deploy engine
+  templates/    template spec, deploy engine, file and repository sources
 web/            React app (see web/DESIGN.md for the design system)
 ```
 
@@ -151,10 +151,11 @@ because an unexplained empty panel reads as a bug.
 
 ## Templates
 
-The built-in catalog ships real images with real environment variables, ports and volume paths.
-Deploying one renders the template with your values, creates the container, starts it, and records
-a stack so the whole thing can be started, stopped or removed as a unit. Containers created by
-Dockyard are labelled:
+The catalog is not compiled into the panel. It is pulled from a public repository of template JSON
+(see below), which is where the templates live, so a new one reaches every install without a
+release. Deploying a template renders it with your values, creates the container, starts it, and
+records a stack so the whole thing can be started, stopped or removed as a unit. Containers created
+by Dockyard are labelled:
 
 ```
 dockyard.managed=true
@@ -176,14 +177,14 @@ Volumes work the same way round: give a path and the container bind-mounts it, o
 Dockyard gives the container a named volume of its own, so the data outlives the container.
 
 Each template card shows the deployed product's real logo. The marks are vendored, not fetched at
-runtime, so the panel works with no outbound access and the bundle carries only the 17 it needs.
-`web/src/components/templateLogos.ts` is generated; to change it, see the header of
-`scripts/gen-template-logos.py`. A template with no mark falls back to its own `icon`, and
-`server/test/template-logos.test.ts` fails if a built-in template is added without one.
+runtime, so the panel works with no outbound access. `web/src/components/templateLogos.ts` is
+generated; to change it, see the header of `scripts/gen-template-logos.py`. A template with no mark
+falls back to its own `icon`, and `server/test/template-logos.test.ts` fails if the repository ships
+a template whose product has no mark.
 
 ### Templates from a file
 
-A template does not have to ship with the panel. Put a `*.json` file in the template directory
+A template does not have to come from the repository. Put a `*.json` file in the template directory
 and it appears in the list on the next page load, with no rebuild and no restart:
 
 ```sh
@@ -199,8 +200,8 @@ bind mount in `docker-compose.yml`, so the file goes on the host next to the com
 
 These templates show up as `source: file` and carry a **from a file** tag. The rules:
 
-- A file beats a built-in template with the same slug, so a built-in can be retagged without
-  touching the code. Delete the file and the built-in comes back.
+- A file beats the repository's copy of the same slug, so a repository template can be retagged
+  without touching the repository. Delete the file and the repository's copy comes back.
 - A file never overwrites a template you edited in the panel.
 - Deleting a file removes the template it defined.
 - Naming a file with a leading `.` or `_` parks it: ignored, but still on disk.
@@ -218,12 +219,12 @@ The same files, without you having to copy them around. The panel pulls a public
 template JSON and reconciles it exactly like a local directory, so a template added or corrected
 there reaches every install on the next refresh. No release, no rebuild, no restart.
 
-The collection is [EliasL-git/dockyard-templates](https://github.com/EliasL-git/dockyard-templates):
-every built-in template as a file, plus the extras from `deploy/template-examples/`. To add a
-template to every Dockyard in the world, open a pull request there.
+The collection is [dockyardapp/dockyard-templates](https://github.com/dockyardapp/dockyard-templates),
+and it is the whole catalog: the panel compiles none of it in, so a fresh install has whatever that
+repository holds. To add a template to every Dockyard in the world, open a pull request there.
 
 ```sh
-DOCKYARD_TEMPLATES_REPO=EliasL-git/dockyard-templates   # empty switches it off
+DOCKYARD_TEMPLATES_REPO=dockyardapp/dockyard-templates   # empty switches it off
 DOCKYARD_TEMPLATES_BRANCH=main
 DOCKYARD_TEMPLATES_REFRESH_MINUTES=15                   # how often a page load may refresh
 DOCKYARD_TEMPLATES_DIR=/app/data/templates-remote       # the cache
@@ -236,7 +237,8 @@ precedence order:
 - A template you edited in the panel always wins, and is reported as skipped rather than
   overwritten.
 - A local file beats the repository. Delete the file and the repository version comes back.
-- The repository beats a built-in, so a built-in can be corrected centrally.
+- The repository is the lowest source: it never overwrites a local file or a template edited in the
+  panel. Correcting a repository template means changing it there.
 - **A failed fetch never removes a template.** The previous cache keeps being served.
 - **A pull is all or nothing.** One unreadable file fails the whole pull, so the cache is either
   the old commit's contents or the new one's, never a mixture.

@@ -11,10 +11,12 @@ import { fileURLToPath } from 'node:url';
 
 /**
  * The public template repository the panel pulls from. It is a *default*, not a hard dependency:
- * setting DOCKYARD_TEMPLATES_REPO to an empty string switches the whole remote source off, and an
- * install that cannot reach the network keeps working off the built-in catalog.
+ * setting DOCKYARD_TEMPLATES_REPO to an empty string switches the whole remote source off, which
+ * leaves the catalog to whatever is on the local host. Nothing is compiled into the panel, so an
+ * install with no repository and no local files starts with an empty catalog rather than a copy of
+ * the repository baked into the image.
  */
-export const DEFAULT_TEMPLATES_REPO = 'EliasL-git/dockyard-templates';
+export const DEFAULT_TEMPLATES_REPO = 'dockyardapp/dockyard-templates';
 
 export type Config = {
   env: 'development' | 'production' | 'test';
@@ -220,7 +222,7 @@ function buildConfig(): Config {
     adminEmail: (process.env.DOCKYARD_ADMIN_EMAIL ?? '').trim(),
     adminPassword: process.env.DOCKYARD_ADMIN_PASSWORD ?? '',
     loginRateMax: positiveInt(process.env.DOCKYARD_LOGIN_RATE_MAX, 10),
-    updateRepo: (process.env.DOCKYARD_UPDATE_REPO ?? '').trim() || 'EliasL-git/dockyard',
+    updateRepo: (process.env.DOCKYARD_UPDATE_REPO ?? '').trim() || 'dockyardapp/dockyard',
     updateBranch: (process.env.DOCKYARD_UPDATE_BRANCH ?? '').trim() || 'main',
     updateToken: (process.env.DOCKYARD_UPDATE_TOKEN ?? '').trim(),
     updateSpoolDir: resolveDir(process.env.DOCKYARD_UPDATE_SPOOL, path.join('data', 'update')),

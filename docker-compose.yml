@@ -52,7 +52,7 @@ services:
       DOCKYARD_TEMPLATE_DIR: /app/data/templates
       # Templates pulled live from a public repository of template JSON. A template pushed there
       # reaches every install on the next refresh. Empty switches the source off.
-      DOCKYARD_TEMPLATES_REPO: ${DOCKYARD_TEMPLATES_REPO:-EliasL-git/dockyard-templates}
+      DOCKYARD_TEMPLATES_REPO: ${DOCKYARD_TEMPLATES_REPO:-dockyardapp/dockyard-templates}
       DOCKYARD_TEMPLATES_BRANCH: ${DOCKYARD_TEMPLATES_BRANCH:-main}
       DOCKYARD_TEMPLATES_DIR: /app/data/templates-remote
       DOCKYARD_TEMPLATES_REFRESH_MINUTES: ${DOCKYARD_TEMPLATES_REFRESH_MINUTES:-15}
@@ -64,7 +64,7 @@ services:
       DOCKYARD_ADMIN_PASSWORD: ${DOCKYARD_ADMIN_PASSWORD:-}
       # Version and update checks. The repository may stay private: set DOCKYARD_UPDATE_TOKEN to
       # a read-only token, or open the repository and leave it empty.
-      DOCKYARD_UPDATE_REPO: ${DOCKYARD_UPDATE_REPO:-EliasL-git/dockyard}
+      DOCKYARD_UPDATE_REPO: ${DOCKYARD_UPDATE_REPO:-dockyardapp/dockyard}
       DOCKYARD_UPDATE_BRANCH: ${DOCKYARD_UPDATE_BRANCH:-main}
       DOCKYARD_UPDATE_TOKEN: ${DOCKYARD_UPDATE_TOKEN:-}
       DOCKYARD_UPDATE_ENABLED: ${DOCKYARD_UPDATE_ENABLED:-true}

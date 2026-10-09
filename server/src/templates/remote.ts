@@ -13,8 +13,8 @@
 //      only replaces the cache once every file is in hand, so the reconcile never sees a partial
 //      set. A fetch that fails leaves the previous cache exactly as it was.
 //   2. It cannot silently undo local work. The reconcile for this source may only overwrite
-//      `builtin` and `remote` rows (see CLAIMABLE in files.ts), so a local file or a template
-//      edited in the panel always wins, whichever order the reconciles run in.
+//      `remote` rows (see CLAIMABLE in files.ts), so a local file or a template edited in the panel
+//      always wins, whichever order the reconciles run in.
 //   3. It stays inside the anonymous rate limit. The file list is one API call and is only made
 //      when the cache is older than `templatesRefreshMinutes`; the file bodies come from the raw
 //      host, which is not rate limited the same way. An admin can force one from the panel.

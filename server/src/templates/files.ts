@@ -4,15 +4,15 @@
 //
 //   user     a template authored in the panel. This module never touches one.
 //   file     a `*.json` file the operator dropped into `config.templateDir`.
-//   builtin  the catalog compiled into the image (`catalog.ts`).
+//   remote   a `*.json` file pulled from the template repository into a local cache.
 //
 // The `file` source is the point of this module: the directory is a bind mount, so adding a
 // template is dropping a file on the host and refreshing the page, with no rebuild and no
-// redeploy. A file wins over a builtin of the same slug, because the file is the more recent
-// explicit intent and changing a builtin's tag without a redeploy is a real use for it. It loses
-// to a `user` row, because editing a template in the panel and then having a file silently revert
-// it would be worse than the reverse. Removing a file removes the template it defined, and a
-// builtin it had shadowed comes back.
+// redeploy. A file wins over a `remote` one of the same slug, because the operator's own file is the
+// more recent explicit intent and it is the only way to correct a repository template without
+// waiting for a pull request. It loses to a `user` row, because editing a template in the panel and
+// then having a file silently revert it would be worse than the reverse. Removing a file removes the
+// template it defined, and the repository version comes back on the forced reconcile that follows.
 //
 // Nothing here is trusted. Every spec is validated with the same zod schema the API uses, and a
 // file that fails is reported and skipped rather than thrown: one bad file must not take the
@@ -28,7 +28,6 @@ import { logger } from '../logger.ts';
 import { many, query } from '../db/pool.ts';
 import type { TemplateSpec } from './schema.ts';
 import { validateSpec } from './schema.ts';
-import { builtinTemplates, syncBuiltinTemplates } from './catalog.ts';
 
 /** One `*.json` file and what came out of it. */
 export type TemplateFileEntry = {
@@ -58,14 +57,12 @@ export type TemplateFileSync = {
   templates: number;
   inserted: number;
   updated: number;
-  /** Slugs that shadow a builtin of the same slug. */
+  /** Slugs that replaced a row belonging to a lower-precedence source. */
   overrides: string[];
   /** Slugs whose row is authored in the panel, so this source was ignored for them. */
   skippedUser: string[];
   /** Rows deleted because their file is gone. */
   removed: string[];
-  /** Builtins that came back after the file shadowing them went away. */
-  restored: string[];
   /** Per-file failures. A file listed here contributed nothing. */
   errors: Array<{ file: string; errors: string[] }>;
 };
@@ -76,13 +73,13 @@ export type TemplateFileSource = 'file' | 'remote';
 /**
  * Which sources a reconcile is allowed to overwrite.
  *
- * This is what makes the precedence `user > file > remote > builtin` hold no matter which order the
- * reconciles happen to run in: a reconcile overwrites everything below it and never touches
- * anything above. Without it, a pull would silently undo a local file or a panel edit.
+ * This is what makes the precedence `user > file > remote` hold no matter which order the
+ * reconciles happen to run in: a reconcile overwrites everything below it and never touches anything
+ * above. Without it, a pull would silently undo a local file or a panel edit.
  */
 const CLAIMABLE: Record<TemplateFileSource, string[]> = {
-  file: ['builtin', 'remote', 'file'],
-  remote: ['builtin', 'remote'],
+  file: ['remote', 'file'],
+  remote: ['remote'],
 };
 
 const JSON_RE = /\.json$/i;
@@ -217,16 +214,29 @@ function errorList(scan: TemplateFileScan): Array<{ file: string; errors: string
 /**
  * Reconcile the `templates` table with the files on disk.
  *
- * Upserts every valid spec with the given `source`, deletes rows of that source whose file has
- * gone, and re-seeds the builtins so anything a removed file had shadowed comes back.
+ * Upserts every valid spec with the given `source`, and deletes rows of that source whose file has
+ * gone. A row of a lower source that this one had taken over is rebuilt by that source's own
+ * reconcile, which the route forces right after this one when anything was removed.
  */
 export async function syncTemplateSource(
   dir: string,
   source: TemplateFileSource,
 ): Promise<TemplateFileSync> {
   const scan = scanTemplateFiles(dir);
-  const builtinSlugs = new Set(builtinTemplates().map((s) => s.slug));
   const claimable = CLAIMABLE[source];
+
+  // The sources this one outranks, which is what `overrides` reports. Read before the upserts below,
+  // because those rewrite the very rows being looked for.
+  const lower = claimable.filter((s) => s !== source);
+  const below = lower.length
+    ? new Set(
+        (
+          await many<{ slug: string }>('select slug from templates where source = any($1::text[])', [
+            lower,
+          ])
+        ).map((r) => r.slug),
+      )
+    : new Set<string>();
 
   const report: TemplateFileSync = {
     at: new Date().toISOString(),
@@ -236,10 +246,9 @@ export async function syncTemplateSource(
     templates: scan.specs.length,
     inserted: 0,
     updated: 0,
-    overrides: scan.specs.filter((s) => builtinSlugs.has(s.spec.slug)).map((s) => s.spec.slug),
+    overrides: scan.specs.filter((s) => below.has(s.spec.slug)).map((s) => s.spec.slug),
     skippedUser: [],
     removed: [],
-    restored: [],
     errors: errorList(scan),
   };
 
@@ -298,10 +307,10 @@ export async function syncTemplateSource(
     const gone = stale.map((r) => r.slug);
     await query(`delete from templates where source = $2 and slug = any($1::text[])`, [gone, source]);
     report.removed = gone;
-    // Re-seeding restores a builtin that a now-removed file had taken over. The rows are gone, so
-    // the insert has nothing to conflict with and the builtin is recreated.
-    await syncBuiltinTemplates();
-    report.restored = gone.filter((slug) => builtinSlugs.has(slug));
+    // A row of a lower source that this one had taken over comes back on that source's own
+    // reconcile, which the route forces immediately after this one whenever anything was removed.
+    // There is nothing to restore from here: the lower source is on disk or in the cache, not in the
+    // code, so its reconcile is the thing that knows how to rebuild it.
   }
 
   return report;

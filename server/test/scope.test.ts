@@ -457,6 +457,37 @@ describe('scope: enforcement over HTTP', () => {
     const scopedId = await insertUser('operator');
     const admin = await sessionFor(adminId);
 
+    // The panel ships no templates any more: the catalog is whatever the repository pull and the
+    // local directory put there. Seed one the way a pull would, so there is something to scope.
+    const seededSlug = `scoped-tpl-${RUN}`;
+    const seededSpec = {
+      schemaVersion: 1,
+      slug: seededSlug,
+      name: 'Scoped test template',
+      category: 'devtools',
+      icon: 'x',
+      description: 'seeded for the scope test',
+      image: 'traefik/whoami',
+      tag: 'v1.11.0',
+      ports: [],
+      env: [],
+      volumes: [],
+      restartPolicy: 'unless-stopped',
+    };
+    await query(
+      `insert into templates (slug, name, category, icon, description, spec, source)
+       values ($1, $2, $3, $4, $5, $6::jsonb, 'remote')
+       on conflict (slug) do update set spec = excluded.spec, source = 'remote'`,
+      [
+        seededSlug,
+        seededSpec.name,
+        seededSpec.category,
+        seededSpec.icon,
+        seededSpec.description,
+        JSON.stringify(seededSpec),
+      ],
+    );
+
     const allTemplates = await app.inject({
       method: 'GET',
       url: '/api/templates',
@@ -464,7 +495,7 @@ describe('scope: enforcement over HTTP', () => {
     });
     assert.equal(allTemplates.statusCode, 200);
     const slugs = (allTemplates.json() as Array<{ slug: string }>).map((t) => t.slug);
-    assert.ok(slugs.length > 0, 'expected the built-in catalogue to be seeded');
+    assert.ok(slugs.length > 0, 'expected the seeded template to be listed');
 
     await app.inject({
       method: 'POST',
@@ -519,6 +550,8 @@ describe('scope: enforcement over HTTP', () => {
       [slugs[0]],
       'exactly the granted template should be listed',
     );
+
+    await query('delete from templates where slug = $1', [seededSlug]);
   });
 });
 

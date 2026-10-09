@@ -25,7 +25,6 @@ import { closePool, one, query } from '../src/db/pool.ts';
 import { hashPassword } from '../src/auth/password.ts';
 import { createSession } from '../src/auth/sessions.ts';
 import { config } from '../src/config.ts';
-import { builtinTemplates, syncBuiltinTemplates } from '../src/templates/catalog.ts';
 import type { TemplateSpec } from '../src/templates/schema.ts';
 import {
   maybeResyncTemplateFiles,
@@ -33,6 +32,7 @@ import {
   resetTemplateFileCache,
   scanTemplateFiles,
   syncTemplateFiles,
+  syncTemplateSource,
   templateFilesStatus,
 } from '../src/templates/files.ts';
 
@@ -123,8 +123,6 @@ before(async () => {
 
 after(async () => {
   await cleanupSlugs();
-  // A file may have taken over a builtin slug; re-seed so the builtin row is back.
-  await syncBuiltinTemplates();
   config.templateDir = originalTemplateDir;
   resetTemplateFileCache();
   for (const id of createdUserIds) {
@@ -285,73 +283,111 @@ test('removing a file removes the template it defined', async () => {
   assert.equal(await one('select id from templates where slug = $1', [slugFor('temp')]), null);
 });
 
-test('an empty directory removes every file template, but leaves builtins and user rows alone', async () => {
+test('an empty directory removes every file template, but leaves repository and user rows alone', async () => {
   clearDir();
   await cleanupSlugs();
   writeFile('a.json', spec('a'));
   writeFile('b.json', spec('b'));
   await syncTemplateFiles(tmpDir);
 
-  const builtinsBefore = await one<{ n: string }>(
-    "select count(*)::int as n from templates where source = 'builtin'",
+  // One row the repository would own and one authored in the panel: neither is this source's to
+  // delete, so an empty directory must not take them.
+  const repoSpec = spec('repo', { name: 'From the repo' });
+  const mineSpec = spec('mine', { name: 'Authored here' });
+  await query(
+    `insert into templates (slug, name, category, icon, description, spec, source)
+     values ($1, $2, $3, $4, $5, $6::jsonb, 'remote'),
+            ($7, $8, $9, $10, $11, $12::jsonb, 'user')`,
+    [
+      repoSpec.slug, repoSpec.name, repoSpec.category, repoSpec.icon, repoSpec.description, JSON.stringify(repoSpec),
+      mineSpec.slug, mineSpec.name, mineSpec.category, mineSpec.icon, mineSpec.description, JSON.stringify(mineSpec),
+    ],
   );
+
+  const before = await one<{ n: string }>(
+    "select count(*)::int as n from templates where slug like $1 and source in ('remote', 'user')",
+    [`${PREFIX}-%`],
+  );
+  assert.equal(Number(before?.n), 2, 'expected both non-file rows to be in place');
 
   clearDir();
   const report = await syncTemplateFiles(tmpDir);
   assert.equal(report.removed.length, 2);
-  const builtinsAfter = await one<{ n: string }>(
-    "select count(*)::int as n from templates where source = 'builtin'",
+
+  const after = await one<{ n: string }>(
+    "select count(*)::int as n from templates where slug like $1 and source in ('remote', 'user')",
+    [`${PREFIX}-%`],
   );
-  assert.equal(Number(builtinsAfter?.n), Number(builtinsBefore?.n), 'builtins must survive an empty directory');
+  assert.equal(
+    Number(after?.n),
+    Number(before?.n),
+    'repository and user rows must survive an empty directory',
+  );
 });
 
 // ---------------------------------------------------------------------------
 // 3. Precedence
 // ---------------------------------------------------------------------------
 
-test('a file overrides a builtin, and removing the file brings the builtin back', async () => {
+test('a file overrides a repository template, and removing the file lets the repository copy back', async () => {
   clearDir();
   await cleanupSlugs();
-  const builtin = builtinTemplates()[0];
-  const builtinBefore = await one<{ tag: string; source: string }>(
-    'select spec->>$1 as tag, source from templates where slug = $2',
-    ['tag', builtin.slug],
+  const slug = slugFor('over');
+
+  // The repository's own copy of this slug, as a pull would have left it.
+  const repoSpec = spec('over', { tag: 'repo-tag', name: 'From the repo' });
+  await query(
+    `insert into templates (slug, name, category, icon, description, spec, source)
+     values ($1, $2, $3, $4, $5, $6::jsonb, 'remote')`,
+    [
+      slug,
+      repoSpec.name,
+      repoSpec.category,
+      repoSpec.icon,
+      repoSpec.description,
+      JSON.stringify(repoSpec),
+    ],
   );
 
   try {
-    // same slug as a builtin, different tag
-    writeFile('override.json', {
-      ...builtin,
-      tag: 'overridden-tag',
-      name: 'Overridden from a file',
-    });
+    // a local file claims the same slug with a different tag
+    writeFile('override.json', { ...repoSpec, tag: 'overridden-tag', name: 'Overridden from a file' });
     const report = await syncTemplateFiles(tmpDir);
-    assert.deepEqual(report.overrides, [builtin.slug], 'the override should be reported');
+    assert.deepEqual(report.overrides, [slug], 'the override should be reported');
 
     const row = await one<{ name: string; source: string; tag: string }>(
       'select name, source, spec->>$1 as tag from templates where slug = $2',
-      ['tag', builtin.slug],
+      ['tag', slug],
     );
     assert.equal(row?.source, 'file');
     assert.equal(row?.name, 'Overridden from a file');
     assert.equal(row?.tag, 'overridden-tag');
 
-    // removing the file restores the compiled-in builtin
+    // Removing the file removes the row. The repository's copy is what brings it back, on the
+    // remote reconcile the route forces right after this one, so model that here: the repository
+    // still holds the spec, and reconciling it restores the original.
     clearDir();
     const removed = await syncTemplateFiles(tmpDir);
-    assert.deepEqual(removed.removed, [builtin.slug]);
-    assert.deepEqual(removed.restored, [builtin.slug]);
+    assert.deepEqual(removed.removed, [slug]);
+    assert.equal(await one('select id from templates where slug = $1', [slug]), null);
 
-    const back = await one<{ source: string; tag: string }>(
-      'select source, spec->>$1 as tag from templates where slug = $2',
-      ['tag', builtin.slug],
-    );
-    assert.equal(back?.source, 'builtin');
-    assert.equal(back?.tag, builtinBefore?.tag);
+    const remoteDir = fs.mkdtempSync(path.join(os.tmpdir(), 'dockyard-remote-'));
+    try {
+      fs.writeFileSync(path.join(remoteDir, 'over.json'), JSON.stringify(repoSpec, null, 2));
+      await syncTemplateSource(remoteDir, 'remote');
+
+      const back = await one<{ source: string; tag: string }>(
+        'select source, spec->>$1 as tag from templates where slug = $2',
+        ['tag', slug],
+      );
+      assert.equal(back?.source, 'remote');
+      assert.equal(back?.tag, 'repo-tag');
+    } finally {
+      fs.rmSync(remoteDir, { recursive: true, force: true });
+    }
   } finally {
     clearDir();
-    await query('delete from templates where slug = $1', [builtin.slug]);
-    await syncBuiltinTemplates();
+    await cleanupSlugs();
   }
 });
 
