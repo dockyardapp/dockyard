@@ -247,6 +247,10 @@ export type ContainerSummary = {
   id: string; name: string; image: string; imageId: string; state: ContainerState; status: string;
   created: number; health: string | null;
   ports: Array<{ ip?: string; privatePort: number; publicPort?: number; type: string }>;
+                                     // One entry per publication, not per bind address: a publish
+                                     // that names no address binds both the IPv4 and the IPv6
+                                     // wildcard, and is still reported once, with `ip` unset.
+                                     // `ip` is present only for a real bind address.
   labels: Record<string, string>;
   managed: boolean;                 // labels['dockyard.managed'] === 'true'
   stackId: string | null;           // labels['dockyard.stack'] ?? null

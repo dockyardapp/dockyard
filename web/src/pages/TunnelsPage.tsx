@@ -592,7 +592,10 @@ function CreateTunnelDrawer({
             <select value={port} onChange={(e) => setPort(e.target.value)} disabled={busy || publishedPorts.length === 0}>
               <option value="">auto</option>
               {publishedPorts.map((p) => (
-                <option key={`${p.publicPort}-${p.type}`} value={String(p.publicPort)}>
+                <option
+                  key={`${p.ip ?? 'any'}:${p.publicPort}->${p.privatePort}/${p.type}`}
+                  value={String(p.publicPort)}
+                >
                   {p.publicPort} -&gt; {p.privatePort}/{p.type}
                 </option>
               ))}

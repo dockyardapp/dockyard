@@ -166,6 +166,45 @@ function labelsOf(raw: unknown): Record<string, string> {
   return out;
 }
 
+/**
+ * Addresses that mean "every interface on this host". Publishing a port without naming an address
+ * binds the IPv4 and the IPv6 wildcard, and Docker reports those as two bindings.
+ */
+const WILDCARD_IPS = new Set(['0.0.0.0', '::', '[::]', '0:0:0:0:0:0:0:0']);
+
+/**
+ * Collapse the wildcard pair Docker reports for a single published port.
+ *
+ * `-p 3001:3001` comes back as two entries that differ only in `ip`, which is one publication to
+ * anyone reading the list. Left alone the same mapping is shown twice, and the tunnel picker
+ * refuses the container outright because it counts two published ports and cannot choose between
+ * them. A binding that names a real address is kept, because binding one port on two specific
+ * addresses is genuinely two publications.
+ */
+export function dedupePorts(ports: ContainerSummary['ports']): ContainerSummary['ports'] {
+  const groups = new Map<string, ContainerSummary['ports'][number][]>();
+  for (const p of ports) {
+    const key = `${p.privatePort}/${p.type}/${p.publicPort ?? ''}`;
+    const bucket = groups.get(key);
+    if (bucket) bucket.push(p);
+    else groups.set(key, [p]);
+  }
+
+  const out: ContainerSummary['ports'] = [];
+  for (const bucket of groups.values()) {
+    const specific = bucket.filter((p) => p.ip !== undefined && !WILDCARD_IPS.has(p.ip));
+    if (specific.length > 0) {
+      out.push(...specific);
+      continue;
+    }
+    // Every binding in this group is a wildcard, so emit the publication once and drop the address:
+    // "all interfaces" is what the absence of an ip already means downstream.
+    const { privatePort, publicPort, type } = bucket[0];
+    out.push(publicPort === undefined ? { privatePort, type } : { privatePort, publicPort, type });
+  }
+  return out;
+}
+
 function mapPorts(raw: unknown): ContainerSummary['ports'] {
   if (!Array.isArray(raw)) return [];
   const out: ContainerSummary['ports'] = [];
@@ -179,7 +218,7 @@ function mapPorts(raw: unknown): ContainerSummary['ports'] {
     if (p.PublicPort) entry.publicPort = Number(p.PublicPort);
     out.push(entry);
   }
-  return out;
+  return dedupePorts(out);
 }
 
 export function summaryFromListItem(item: any): ContainerSummary {
@@ -224,7 +263,7 @@ function portsFromInspect(insp: any): ContainerSummary['ports'] {
       out.push(entry);
     }
   }
-  return out;
+  return dedupePorts(out);
 }
 
 function summaryFromInspect(insp: any): ContainerSummary {

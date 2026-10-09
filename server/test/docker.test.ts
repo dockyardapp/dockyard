@@ -197,6 +197,9 @@ describe('mock docker lifecycle', () => {
     assert.equal(summary!.state, 'running');
     assert.equal(summary!.ports[0].privatePort, 80);
     assert.equal(summary!.ports[0].publicPort, 18080);
+    // A real daemon binds both the IPv4 and IPv6 wildcard for this publish; the list must still
+    // report the single publication, not one entry per bind address.
+    assert.equal(summary!.ports.length, 1, 'one published port, not one per bind address');
 
     const detail = await containers.getContainer(created.id);
     assert.equal(detail.command, 'sleep 300');
@@ -358,6 +361,86 @@ describe('mock docker lifecycle', () => {
     assert.ok((await docker.listNetworks()).some((n) => n.name === 'dy-net'));
     await docker.removeNetwork(net.id);
     assert.ok(!(await docker.listNetworks()).some((n) => n.name === 'dy-net'));
+  });
+});
+
+describe('published ports', () => {
+  // Docker reports one entry per host binding, and a publish that names no address binds both the
+  // IPv4 and the IPv6 wildcard. Both shapes below are what the daemon really returns for a single
+  // `-p 3001:3001`, captured from a live host.
+  const wildcardPair = [
+    { IP: '0.0.0.0', PrivatePort: 3001, PublicPort: 3001, Type: 'tcp' },
+    { IP: '::', PrivatePort: 3001, PublicPort: 3001, Type: 'tcp' },
+  ];
+
+  test('a list item publishing one port reports one port', () => {
+    const summary = containers.summaryFromListItem({
+      Id: 'abc',
+      Names: ['/uptime-kuma'],
+      Image: 'louislam/uptime-kuma:1.23.16',
+      State: 'running',
+      Status: 'Up 5 minutes',
+      Created: 1_700_000_000,
+      Ports: wildcardPair,
+      Labels: {},
+    });
+
+    // One publication, not two. Two would also make the tunnel picker refuse the container, because
+    // it counts published ports and cannot choose between them.
+    assert.deepEqual(summary.ports, [{ privatePort: 3001, publicPort: 3001, type: 'tcp' }]);
+  });
+
+  test('the wildcard pair collapses but a named address is kept', () => {
+    assert.deepEqual(
+      containers.dedupePorts([
+        { ip: '0.0.0.0', privatePort: 80, publicPort: 8080, type: 'tcp' },
+        { ip: '::', privatePort: 80, publicPort: 8080, type: 'tcp' },
+      ]),
+      [{ privatePort: 80, publicPort: 8080, type: 'tcp' }],
+    );
+
+    // A specific bind address is a real difference and survives.
+    assert.deepEqual(
+      containers.dedupePorts([
+        { ip: '127.0.0.1', privatePort: 5432, publicPort: 5432, type: 'tcp' },
+      ]),
+      [{ ip: '127.0.0.1', privatePort: 5432, publicPort: 5432, type: 'tcp' }],
+    );
+  });
+
+  test('two genuinely different published ports are both kept', () => {
+    // This is the case the tunnel picker should still ask about.
+    const ports = containers.dedupePorts([
+      { ip: '0.0.0.0', privatePort: 80, publicPort: 8080, type: 'tcp' },
+      { ip: '::', privatePort: 80, publicPort: 8080, type: 'tcp' },
+      { ip: '0.0.0.0', privatePort: 443, publicPort: 8443, type: 'tcp' },
+      { ip: '::', privatePort: 443, publicPort: 8443, type: 'tcp' },
+    ]);
+
+    assert.deepEqual(ports, [
+      { privatePort: 80, publicPort: 8080, type: 'tcp' },
+      { privatePort: 443, publicPort: 8443, type: 'tcp' },
+    ]);
+  });
+
+  test('an exposed but unpublished port is left alone', () => {
+    assert.deepEqual(
+      containers.dedupePorts([{ privatePort: 5432, type: 'tcp' }]),
+      [{ privatePort: 5432, type: 'tcp' }],
+    );
+  });
+
+  test('a udp binding on the same port number is not merged with the tcp one', () => {
+    assert.deepEqual(
+      containers.dedupePorts([
+        { ip: '0.0.0.0', privatePort: 53, publicPort: 53, type: 'tcp' },
+        { ip: '0.0.0.0', privatePort: 53, publicPort: 53, type: 'udp' },
+      ]),
+      [
+        { privatePort: 53, publicPort: 53, type: 'tcp' },
+        { privatePort: 53, publicPort: 53, type: 'udp' },
+      ],
+    );
   });
 });
 
