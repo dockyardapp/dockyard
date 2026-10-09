@@ -151,6 +151,15 @@ export type TemplateSpec = {
   docsUrl?: string;
 };
 
+/**
+ * Where a template came from.
+ *   builtin — compiled into the image (the shipped catalog)
+ *   file    — a `*.json` file in the template directory, which is a bind mount, so adding one
+ *             needs no rebuild and no restart
+ *   user    — authored in the panel
+ */
+export type TemplateSource = 'builtin' | 'user' | 'file';
+
 export type Template = {
   id: string;
   slug: string;
@@ -158,10 +167,47 @@ export type Template = {
   category: string;
   icon: string;
   description: string;
-  source: 'builtin' | 'user';
+  source: TemplateSource;
   spec: TemplateSpec;
   created_at: string;
   updated_at: string;
+};
+
+/** One `*.json` file in the template directory and what came out of it. */
+export type TemplateFileEntry = {
+  file: string;
+  /** Slugs that loaded from this file, in file order. */
+  templates: string[];
+  /** Validation failures; empty when the file is clean. */
+  errors: string[];
+};
+
+export type TemplateFileSync = {
+  at: string;
+  dir: string;
+  files: number;
+  templates: number;
+  inserted: number;
+  updated: number;
+  /** File slugs that shadow a builtin of the same slug. */
+  overrides: string[];
+  /** File slugs whose row is authored in the panel, so the file was ignored for them. */
+  skippedUser: string[];
+  /** File-sourced templates removed because their file is gone. */
+  removed: string[];
+  /** Builtins that came back after the file shadowing them went away. */
+  restored: string[];
+  errors: Array<{ file: string; errors: string[] }>;
+};
+
+export type TemplateFilesStatus = {
+  dir: string;
+  exists: boolean;
+  entries: TemplateFileEntry[];
+  /** Files ignored because their name starts with `.` or `_`. */
+  parked: string[];
+  errors: Array<{ file: string; errors: string[] }>;
+  lastSync: TemplateFileSync | null;
 };
 
 /* ----------------------------------------------------------------- §6 stacks */

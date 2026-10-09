@@ -1,0 +1,86 @@
+{
+  "templates": [
+    {
+      "schemaVersion": 1,
+      "slug": "syncthing",
+      "name": "Syncthing",
+      "category": "storage",
+      "icon": "🔄",
+      "description": "Continuous file synchronisation between your own devices, with no server in the middle.",
+      "image": "syncthing/syncthing",
+      "tag": "2.1.6",
+      "ports": [
+        { "container": 8384, "label": "Web UI", "defaultHost": 8384 },
+        { "container": 22000, "label": "Sync protocol", "defaultHost": 22000 }
+      ],
+      "env": [
+        { "key": "PUID", "label": "Run as uid", "default": "1000" },
+        { "key": "PGID", "label": "Run as gid", "default": "1000" }
+      ],
+      "volumes": [
+        { "container": "/var/syncthing", "label": "Configuration and index", "named": true }
+      ],
+      "restartPolicy": "unless-stopped",
+      "notes": "Port 22000 carries both TCP and UDP. This template publishes it as TCP, so add a UDP mapping by hand if your peers cannot connect.",
+      "docsUrl": "https://github.com/syncthing/syncthing"
+    },
+    {
+      "schemaVersion": 1,
+      "slug": "filebrowser",
+      "name": "File Browser",
+      "category": "storage",
+      "icon": "📁",
+      "description": "A web file manager over a directory you choose.",
+      "image": "filebrowser/filebrowser",
+      "tag": "v2.63.23",
+      "ports": [{ "container": 80, "label": "Web UI", "defaultHost": 8081 }],
+      "volumes": [
+        { "container": "/srv", "label": "The directory to browse" },
+        { "container": "/database.db", "label": "Users and settings database", "named": true }
+      ],
+      "restartPolicy": "unless-stopped",
+      "notes": "The first user to sign in is the administrator. Set the /srv host path to the directory you actually want to expose.",
+      "docsUrl": "https://filebrowser.org/installation"
+    },
+    {
+      "schemaVersion": 1,
+      "slug": "mariadb",
+      "name": "MariaDB",
+      "category": "database",
+      "icon": "🦭",
+      "description": "The MariaDB relational database, a drop-in replacement for MySQL.",
+      "image": "mariadb",
+      "tag": "11.4",
+      "ports": [{ "container": 3306, "label": "MariaDB", "defaultHost": 3306 }],
+      "env": [
+        {
+          "key": "MARIADB_ROOT_PASSWORD",
+          "label": "Root password",
+          "required": true,
+          "secret": true,
+          "description": "Required. The image refuses to start without it, or without one of the other root options."
+        },
+        {
+          "key": "MARIADB_DATABASE",
+          "label": "Database",
+          "description": "Created on first start."
+        },
+        {
+          "key": "MARIADB_USER",
+          "label": "Application user",
+          "description": "Created on first start, with access to the database above."
+        },
+        {
+          "key": "MARIADB_PASSWORD",
+          "label": "Application user password",
+          "secret": true
+        }
+      ],
+      "volumes": [
+        { "container": "/var/lib/mysql", "label": "Data", "named": true }
+      ],
+      "restartPolicy": "unless-stopped",
+      "docsUrl": "https://hub.docker.com/_/mariadb"
+    }
+  ]
+}

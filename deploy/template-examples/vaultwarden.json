@@ -1,0 +1,36 @@
+{
+  "schemaVersion": 1,
+  "slug": "vaultwarden",
+  "name": "Vaultwarden",
+  "category": "storage",
+  "icon": "🔐",
+  "description": "A small Bitwarden-compatible password server, written in Rust.",
+  "image": "vaultwarden/server",
+  "tag": "1.37.4",
+  "ports": [{ "container": 80, "label": "Web UI", "defaultHost": 8080 }],
+  "env": [
+    {
+      "key": "ADMIN_TOKEN",
+      "label": "Admin page token",
+      "secret": true,
+      "description": "Unlocks /admin, where accounts and the SMTP settings live. Leave it empty to keep the admin page switched off."
+    },
+    {
+      "key": "SIGNUPS_ALLOWED",
+      "label": "Allow new sign-ups",
+      "default": "true",
+      "description": "Set it to false once your own account exists, so nobody else can register."
+    },
+    {
+      "key": "DOMAIN",
+      "label": "Public URL",
+      "description": "The URL clients reach this server on, including the scheme. Needed for attachments and for WebSocket notifications."
+    }
+  ],
+  "volumes": [
+    { "container": "/data", "label": "Accounts, vaults and attachments", "named": true }
+  ],
+  "restartPolicy": "unless-stopped",
+  "notes": "Put this behind HTTPS before you put real passwords in it. Clients refuse to sync over plain HTTP.",
+  "docsUrl": "https://github.com/dani-garcia/vaultwarden/wiki"
+}

@@ -33,6 +33,8 @@ import type {
   StartUpdateResponse,
   SystemInfo,
   Template,
+  TemplateFileSync,
+  TemplateFilesStatus,
   TemplateSpec,
   Tunnel,
   UpdateStatus,
@@ -246,6 +248,10 @@ export const endpoints = {
     remove: (slug: string) => api.del<OkResponse>(`/api/templates/${encodeURIComponent(slug)}`),
     deploy: (slug: string, name: string, values: Record<string, string>) =>
       api.post<DeployResponse>(`/api/templates/${encodeURIComponent(slug)}/deploy`, { name, values }),
+    /** Diagnostics for the JSON files behind `source: 'file'` templates. */
+    files: () => api.get<TemplateFilesStatus>('/api/template-files'),
+    reloadFiles: () =>
+      api.post<TemplateFileSync & { status: TemplateFilesStatus }>('/api/template-files/reload', {}),
   },
   stacks: {
     list: () => api.get<StackWithContainers[]>('/api/stacks'),

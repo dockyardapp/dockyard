@@ -1,0 +1,40 @@
+{
+  "schemaVersion": 1,
+  "slug": "gitea",
+  "name": "Gitea",
+  "category": "devtools",
+  "icon": "🍵",
+  "description": "Self-hosted Git service with a web UI, issues and pull requests.",
+  "image": "gitea/gitea",
+  "tag": "1.27.3",
+  "ports": [
+    { "container": 3000, "label": "Web UI", "defaultHost": 3000 },
+    { "container": 22, "label": "SSH", "defaultHost": 2222 }
+  ],
+  "env": [
+    {
+      "key": "GITEA__database__DB_TYPE",
+      "label": "Database",
+      "default": "sqlite3",
+      "description": "sqlite3 needs nothing else. Set postgres to use an external database, then fill in the host values below."
+    },
+    {
+      "key": "GITEA__server__ROOT_URL",
+      "label": "Root URL",
+      "default": "http://localhost:3000/",
+      "description": "The address people reach this instance on. Set it to the real one before the first sign-in or the links Gitea hands out will be wrong."
+    },
+    {
+      "key": "GITEA__server__SSH_PORT",
+      "label": "Advertised SSH port",
+      "default": "2222",
+      "description": "The SSH port Gitea tells users to clone over. It has to match the host port published above."
+    }
+  ],
+  "volumes": [
+    { "container": "/data", "label": "Repositories, configuration and the SQLite database", "named": true }
+  ],
+  "restartPolicy": "unless-stopped",
+  "notes": "The first account that registers becomes the administrator.",
+  "docsUrl": "https://docs.gitea.com/installation/install-with-docker"
+}

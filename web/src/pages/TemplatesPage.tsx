@@ -1,12 +1,20 @@
 import { useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { endpoints, errorMessage } from '../api/client';
-import type { DeployResponse, Template, TemplateCategory, TemplateSpec } from '../api/types';
+import type {
+  DeployResponse,
+  Template,
+  TemplateCategory,
+  TemplateFileSync,
+  TemplateFilesStatus,
+  TemplateSource,
+  TemplateSpec,
+} from '../api/types';
 import { usePolling } from '../hooks/usePolling';
 import { useRowCap } from '../hooks/useRowCap';
 import { RowCapNotice } from '../components/RowCapNotice';
 import { useAuth } from '../hooks/useAuth';
-import { can } from '../lib/rbac';
+import { atLeast, can } from '../lib/rbac';
 import { Icon } from '../components/Icons';
 import { TemplateLogo } from '../components/TemplateLogo';
 import {
@@ -41,14 +49,34 @@ export function TemplatesPage() {
   const canDestroy = can.destroy(user?.role);
 
   const [category, setCategory] = useState<TemplateCategory | 'all'>('all');
-  const [source, setSource] = useState<'all' | 'builtin' | 'user'>('all');
+  const [source, setSource] = useState<'all' | TemplateSource>('all');
   const [query, setQuery] = useState('');
   const [active, setActive] = useState<Template | null>(null);
   const [editorOpen, setEditorOpen] = useState(false);
   const [editTarget, setEditTarget] = useState<Template | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [reloadNote, setReloadNote] = useState<string | null>(null);
+  const [reloadingFiles, setReloadingFiles] = useState(false);
+
+  const canReloadFiles = atLeast(user?.role, 'admin');
 
   const list = usePolling<Template[]>(() => endpoints.templates.list(), { intervalMs: 60000 });
+  const files = usePolling<TemplateFilesStatus>(() => endpoints.templates.files(), { intervalMs: 120000 });
+
+  const reloadFiles = async () => {
+    setReloadingFiles(true);
+    setError(null);
+    setReloadNote(null);
+    try {
+      const report = await endpoints.templates.reloadFiles();
+      await Promise.all([files.refresh(), list.refresh()]);
+      setReloadNote(describeSync(report));
+    } catch (err) {
+      setError(errorMessage(err));
+    } finally {
+      setReloadingFiles(false);
+    }
+  };
 
   const filtered = useMemo(() => {
     const rows = list.data ?? [];
@@ -65,7 +93,7 @@ export function TemplatesPage() {
   const removeTemplate = async (t: Template) => {
     const ok = await confirm({
       title: `Delete template ${t.name}?`,
-      body: 'User templates are removed permanently. Built-in templates cannot be deleted.',
+      body: 'This removes the template permanently. Templates that come from a file are removed by deleting the file, and built-in templates cannot be deleted.',
       confirmLabel: 'Delete template',
       danger: true,
     });
@@ -114,6 +142,11 @@ export function TemplatesPage() {
           {errorMessage(list.error)}
         </Banner>
       ) : null}
+      {reloadNote ? (
+        <Banner tone="info" title="Template files reloaded" onDismiss={() => setReloadNote(null)}>
+          {reloadNote}
+        </Banner>
+      ) : null}
 
       <div className="filter-bar">
         {CATEGORIES.map((c) => (
@@ -130,6 +163,7 @@ export function TemplatesPage() {
         <select value={source} onChange={(e) => setSource(e.target.value as typeof source)} aria-label="Filter by source" style={{ width: 'auto' }}>
           <option value="all">all sources</option>
           <option value="builtin">built-in</option>
+          <option value="file">from a file</option>
           <option value="user">user</option>
         </select>
         <input
@@ -177,6 +211,11 @@ export function TemplatesPage() {
                   <div className="row" style={{ gap: 'var(--space-2)', marginTop: 2 }}>
                     <span className="tag">{t.category}</span>
                     {t.source === 'builtin' ? <span className="tag">built-in</span> : null}
+                    {t.source === 'file' ? (
+                      <span className="tag" title="Loaded from a JSON file in the template directory">
+                        from a file
+                      </span>
+                    ) : null}
                   </div>
                 </div>
               </div>
@@ -219,6 +258,15 @@ export function TemplatesPage() {
         onShowAll={capped.showAll}
       />
 
+      <TemplateFilesCard
+        status={files.data}
+        loading={files.loading && !files.data}
+        error={files.error}
+        canReload={canReloadFiles}
+        reloading={reloadingFiles}
+        onReload={() => void reloadFiles()}
+      />
+
       {active ? (
         <DeployDrawer
           template={active}
@@ -240,6 +288,137 @@ export function TemplatesPage() {
         }}
       />
     </>
+  );
+}
+
+/* ---------------------------------------------------------- template files card */
+
+/**
+ * A plain-language summary of what a reconcile did, used for the banner after a manual reload and
+ * for the card's own "last reconcile" line.
+ */
+function describeSync(report: TemplateFileSync): string {
+  const files = `${report.files} ${report.files === 1 ? 'file' : 'files'}`;
+  const templates = `${report.templates} ${report.templates === 1 ? 'template' : 'templates'}`;
+  const parts: string[] = [];
+  if (report.inserted > 0) parts.push(`${report.inserted} added`);
+  if (report.updated > 0) parts.push(`${report.updated} updated`);
+  if (report.removed.length > 0) parts.push(`${report.removed.length} removed`);
+  if (report.overrides.length > 0) parts.push(`${report.overrides.length} replacing a built-in`);
+  if (report.skippedUser.length > 0) parts.push(`${report.skippedUser.length} skipped, edited in the panel`);
+  if (report.errors.length > 0) parts.push(`${report.errors.length} rejected`);
+  return parts.length === 0
+    ? `Read ${files} holding ${templates}. Nothing changed.`
+    : `Read ${files} holding ${templates}: ${parts.join(', ')}.`;
+}
+
+function TemplateFilesCard({
+  status,
+  loading,
+  error,
+  canReload,
+  reloading,
+  onReload,
+}: {
+  status: TemplateFilesStatus | null | undefined;
+  loading: boolean;
+  error: unknown;
+  canReload: boolean;
+  reloading: boolean;
+  onReload: () => void;
+}) {
+  return (
+    <div style={{ marginTop: 'var(--space-5)' }}>
+      <Card
+        title="Template files"
+        actions={
+          <Button size="sm" icon="refresh" busy={reloading} disabled={!canReload} onClick={onReload}>
+            Reload files
+          </Button>
+        }
+      >
+        <p className="dim" style={{ fontSize: 'var(--fs-xs)', marginTop: 0 }}>
+          Templates can also come from JSON files. Put a <code>*.json</code> file in{' '}
+          <code>{status?.dir ?? 'the template directory'}</code> and it appears in the list above
+          with no rebuild and no restart. One file can hold a single template, an array of them, or{' '}
+          <code>{'{ "templates": [ ... ] }'}</code>. Naming a file with a leading <code>.</code> or{' '}
+          <code>_</code> parks it, so it is ignored but kept.
+        </p>
+
+        {error ? (
+          <Banner tone="error" title="Could not read the template directory">
+            {errorMessage(error)}
+          </Banner>
+        ) : loading ? (
+          <SkeletonRows rows={2} cols={3} />
+        ) : !status ? null : !status.exists ? (
+          <Banner tone="warn" title="The template directory does not exist">
+            Create <code>{status.dir}</code> and put a template file in it. In a Compose deployment
+            that is the <code>data/templates</code> folder next to the compose file.
+          </Banner>
+        ) : status.entries.length === 0 ? (
+          <p className="dim" style={{ fontSize: 'var(--fs-xs)', marginBottom: 0 }}>
+            No template files in <code>{status.dir}</code> yet.
+          </p>
+        ) : (
+          <div className="table-wrap">
+            <table className="data">
+              <thead>
+                <tr>
+                  <th>File</th>
+                  <th>Templates</th>
+                  <th>Status</th>
+                </tr>
+              </thead>
+              <tbody>
+                {status.entries.map((entry) => (
+                  <tr key={entry.file}>
+                    <td className="mono-cell">{entry.file}</td>
+                    <td className="mono-cell">
+                      {entry.templates.length > 0 ? entry.templates.join(', ') : '-'}
+                    </td>
+                    <td>
+                      {entry.errors.length === 0 ? (
+                        <span className="pill pill-running">loaded</span>
+                      ) : (
+                        <span className="pill pill-error">error</span>
+                      )}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+
+        {status && status.errors.length > 0 ? (
+          <div style={{ marginTop: 'var(--space-3)' }}>
+            <Banner tone="error" title="Some files were rejected">
+              <div className="stack" style={{ gap: 2 }}>
+                {status.errors.map((entry) => (
+                  <span key={entry.file} className="mono-cell" style={{ fontSize: 'var(--fs-micro)' }}>
+                    {entry.file}: {entry.errors.join('; ')}
+                  </span>
+                ))}
+              </div>
+            </Banner>
+          </div>
+        ) : null}
+
+        {status && status.parked.length > 0 ? (
+          <p className="dim" style={{ fontSize: 'var(--fs-micro)', marginBottom: 0 }}>
+            Parked: <code>{status.parked.join(', ')}</code>
+          </p>
+        ) : null}
+
+        {status?.lastSync ? (
+          <p className="dim" style={{ fontSize: 'var(--fs-micro)', marginBottom: 0 }}>
+            Last reconcile at {new Date(status.lastSync.at).toLocaleTimeString()}.{' '}
+            {describeSync(status.lastSync)}
+          </p>
+        ) : null}
+      </Card>
+    </div>
   );
 }
 

@@ -4,8 +4,14 @@
 //   GET    /templates/:slug                                 viewer
 //   POST   /templates               { spec }                operator  201
 //   PATCH  /templates/:slug         { spec }                operator
-//   DELETE /templates/:slug                                 admin   (builtin -> 409)
+//   DELETE /templates/:slug                                 admin   (builtin/file -> 409)
 //   POST   /templates/:slug/deploy  { name, values }        operator  201
+//   GET    /template-files                                  viewer
+//   POST   /template-files/reload                           admin
+//
+// `source` is one of 'builtin' (compiled in), 'file' (a *.json file in DOCKYARD_TEMPLATE_DIR) or
+// 'user' (authored in the panel). A read reconciles the file-sourced rows first, so a template
+// added to the directory appears without a restart. See templates/files.ts.
 
 import type { FastifyInstance, FastifyReply } from 'fastify';
 import { z } from 'zod';
@@ -16,7 +22,17 @@ import { auditFromRequest } from '../auth/audit.ts';
 import { validateSpec, TemplateValidationError } from '../templates/schema.ts';
 import type { TemplateSpec } from '../templates/schema.ts';
 import { ensureBuiltinTemplates } from '../templates/catalog.ts';
+import {
+  logTemplateFileSync,
+  maybeResyncTemplateFiles,
+  reloadTemplateFiles,
+  rememberTemplateFileSync,
+  templateFilesStatus,
+} from '../templates/files.ts';
 import { deployTemplate, TemplateNotFoundError } from '../templates/engine.ts';
+import { logger } from '../logger.ts';
+
+type TemplateSource = 'builtin' | 'user' | 'file';
 
 type TemplateRow = {
   id: string;
@@ -26,7 +42,7 @@ type TemplateRow = {
   icon: string;
   description: string;
   spec: unknown;
-  source: 'builtin' | 'user';
+  source: TemplateSource;
   created_at: unknown;
   updated_at: unknown;
 };
@@ -38,7 +54,7 @@ type WireTemplate = {
   category: string;
   icon: string;
   description: string;
-  source: 'builtin' | 'user';
+  source: TemplateSource;
   spec: TemplateSpec;
   created_at: string;
   updated_at: string;
@@ -89,11 +105,35 @@ function coerceValues(input: Record<string, string | number | boolean> | undefin
   return out;
 }
 
+/**
+ * Reconcile the file-sourced templates before answering a read.
+ *
+ * Cheap when nothing has changed (one directory stamp), and it is the whole mechanism behind
+ * "drop a file on the host, refresh the page": the directory is a bind mount, so a new template
+ * arrives with no rebuild and no restart.
+ */
+async function resyncTemplateFiles(): Promise<void> {
+  try {
+    const report = await maybeResyncTemplateFiles();
+    if (report) {
+      rememberTemplateFileSync(report);
+      logTemplateFileSync(report);
+    }
+  } catch (err) {
+    // A template directory that cannot be reconciled must not take the catalog down: the builtins
+    // and any user-authored templates are still perfectly serviceable without it.
+    logger.warn('templates: could not reconcile the template directory', {
+      error: err instanceof Error ? err.message : String(err),
+    });
+  }
+}
+
 export default async function templatesRoutes(app: FastifyInstance): Promise<void> {
   // Read routes seed the built-in catalog on first use so the API works even if boot seeding
-  // was skipped (e.g. the table was empty when the process started).
+  // was skipped (e.g. the table was empty when the process started), then layer the files on top.
   app.get('/templates', { preHandler: requireRole('viewer') }, async (req, reply) => {
     await ensureBuiltinTemplates();
+    await resyncTemplateFiles();
     const { category, source } = listQuery.parse(req.query ?? {});
     const rows = await many<TemplateRow>(
       `select * from templates
@@ -107,6 +147,7 @@ export default async function templatesRoutes(app: FastifyInstance): Promise<voi
 
   app.get('/templates/:slug', { preHandler: requireRole('viewer') }, async (req, reply) => {
     await ensureBuiltinTemplates();
+    await resyncTemplateFiles();
     const { slug } = req.params as { slug: string };
     const row = await one<TemplateRow>('select * from templates where slug = $1', [slug]);
     if (!row) return sendError(reply, 404, 'not_found', `template not found: ${slug}`);
@@ -180,12 +221,44 @@ export default async function templatesRoutes(app: FastifyInstance): Promise<voi
     const { slug } = req.params as { slug: string };
     const row = await one<TemplateRow>('select * from templates where slug = $1', [slug]);
     if (!row) return sendError(reply, 404, 'not_found', `template not found: ${slug}`);
-    if (row.source === 'builtin') {
-      return sendError(reply, 409, 'conflict', 'built-in templates cannot be deleted');
+    if (row.source !== 'user') {
+      // A file-sourced template is defined by a file, so deleting the row would only last until the
+      // next scan put it back. Refusing is the honest answer, and it names the way to actually
+      // remove it.
+      return sendError(
+        reply,
+        409,
+        'conflict',
+        row.source === 'file'
+          ? 'this template is defined by a file on disk; remove the file to remove the template'
+          : 'built-in templates cannot be deleted',
+      );
     }
     await query('delete from templates where slug = $1', [slug]);
     await auditFromRequest(req, 'template.delete', 'template', slug, { name: row.name });
     return reply.code(200).send({ ok: true });
+  });
+
+  // Diagnostics for the file-sourced catalog: what is on disk, what loaded, what failed and why.
+  // Readable by a viewer because it describes templates they can already list; reloading is an
+  // admin action because it rewrites rows.
+  app.get('/template-files', { preHandler: requireRole('viewer') }, async (req, reply) => {
+    await ensureBuiltinTemplates();
+    await resyncTemplateFiles();
+    return reply.code(200).send(templateFilesStatus());
+  });
+
+  app.post('/template-files/reload', { preHandler: requireRole('admin') }, async (req, reply) => {
+    const report = await reloadTemplateFiles();
+    rememberTemplateFileSync(report);
+    logTemplateFileSync(report);
+    await auditFromRequest(req, 'template.reload_files', 'template', null, {
+      inserted: report.inserted,
+      updated: report.updated,
+      removed: report.removed,
+      errors: report.errors.length,
+    });
+    return reply.code(200).send({ ...report, status: templateFilesStatus() });
   });
 
   app.post('/templates/:slug/deploy', { preHandler: requireRole('operator') }, async (req, reply) => {

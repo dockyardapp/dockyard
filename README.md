@@ -171,6 +171,36 @@ runtime, so the panel works with no outbound access and the bundle carries only 
 `scripts/gen-template-logos.py`. A template with no mark falls back to its own `icon`, and
 `server/test/template-logos.test.ts` fails if a built-in template is added without one.
 
+### Templates from a file
+
+A template does not have to ship with the panel. Put a `*.json` file in the template directory
+and it appears in the list on the next page load, with no rebuild and no restart:
+
+```sh
+mkdir -p data/templates
+cp deploy/template-examples/gitea.json data/templates/
+```
+
+The directory is `DOCKYARD_TEMPLATE_DIR`, which defaults to `<repo>/data/templates` and is a
+bind mount in `docker-compose.yml`, so the file goes on the host next to the compose file.
+`deploy/template-examples/` has one of each accepted shape (a bare spec, an array, and a
+`{ "templates": [ ... ] }` pack) plus a field reference.
+
+These templates show up as `source: file` and carry a **from a file** tag. The rules:
+
+- A file beats a built-in template with the same slug, so a built-in can be retagged without
+  touching the code. Delete the file and the built-in comes back.
+- A file never overwrites a template you edited in the panel.
+- Deleting a file removes the template it defined.
+- Naming a file with a leading `.` or `_` parks it: ignored, but still on disk.
+- A malformed file is reported and skipped. The other files still load and the panel still
+  starts, so one typo cannot take the catalog down.
+
+The Templates page has a **Template files** card listing every file, what came out of it, and
+the validation error for any that failed. Administrators get a **Reload files** button that
+re-reads the directory immediately. `GET /api/template-files` returns the same thing, and
+`POST /api/template-files/reload` forces a reconcile.
+
 ## Tunnels
 
 Three ways to reach a container from outside. The end user picks one per tunnel.

@@ -27,6 +27,18 @@ In `.env`, for a real host:
 - `SECRET_KEY` — 64 hex chars, `openssl rand -hex 24`.
 - `DATABASE_URL`, `DOCKYARD_ADMIN_EMAIL`, `DOCKYARD_ADMIN_PASSWORD`.
 
+Two directories are bind-mounted out of the deployment, so they belong on the host next to the
+compose file:
+
+```sh
+mkdir -p data/update data/templates
+```
+
+`data/update` is where the panel leaves an update request for the host-side updater in
+`deploy/update.sh`. `data/templates` is scanned for `*.json` template files: a template dropped
+in there appears in the panel on the next page load, with no rebuild and no restart. Copy the
+files in `deploy/template-examples/` to start from something real.
+
 ## 2. Reverse proxy and TLS
 
 Copy `deploy/nginx.conf.example` to `/etc/nginx/sites-available/dockyard`, set

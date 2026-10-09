@@ -47,6 +47,9 @@ services:
       # published port must reach it through the host gateway, not 127.0.0.1.
       TUNNEL_TARGET_HOST: host.docker.internal
       TUNNEL_DATA_DIR: /app/data/tunnels
+      # Templates can be supplied as JSON files. This directory is a bind mount (see volumes), so
+      # dropping a file on the host adds a template with no rebuild and no restart.
+      DOCKYARD_TEMPLATE_DIR: /app/data/templates
       CLOUDFLARED_BIN: /usr/local/bin/cloudflared
       CLOUDFLARE_API_TOKEN: ${CLOUDFLARE_API_TOKEN:-}
       CLOUDFLARE_ACCOUNT_ID: ${CLOUDFLARE_ACCOUNT_ID:-}
@@ -80,6 +83,10 @@ services:
       # The update spool is a bind mount rather than a volume, because the host-side updater in
       # deploy/update.sh has to read the request the panel writes here and publish its status back.
       - ./data/update:/app/data/update
+      # Template files. A bind mount for the same reason: the operator drops a *.json file here on
+      # the host and the panel picks it up on the next read, with no rebuild and no restart. See
+      # deploy/template-examples/ for files to copy in.
+      - ./data/templates:/app/data/templates
 
 volumes:
   dockyard-pg:

@@ -43,12 +43,13 @@ COPY server/tsconfig.json ./server/tsconfig.json
 COPY --from=web   /build/web/dist ./web/dist
 COPY --from=cloudflared /usr/local/bin/cloudflared /usr/local/bin/cloudflared
 
-RUN mkdir -p /app/data/tunnels && chown -R dockyard:dockyard /app
+RUN mkdir -p /app/data/tunnels /app/data/templates && chown -R dockyard:dockyard /app
 
 ENV NODE_ENV=production \
     PORT=8000 \
     HOST=0.0.0.0 \
     TUNNEL_DATA_DIR=/app/data/tunnels \
+    DOCKYARD_TEMPLATE_DIR=/app/data/templates \
     CLOUDFLARED_BIN=/usr/local/bin/cloudflared \
     DOCKYARD_COMMIT=$GIT_COMMIT \
     DOCKYARD_BUILD_TIME=$BUILD_TIME

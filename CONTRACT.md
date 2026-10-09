@@ -385,8 +385,10 @@ The first user created is `admin`.
 | GET | `/api/templates/:slug` | – | `Template` | viewer |
 | POST | `/api/templates` | `{spec}` | `Template` 201 | operator |
 | PATCH | `/api/templates/:slug` | `{spec}` | `Template` | operator |
-| DELETE | `/api/templates/:slug` | – | `{ok:true}` (builtin → 409) | admin |
+| DELETE | `/api/templates/:slug` | – | `{ok:true}` (builtin/file → 409) | admin |
 | POST | `/api/templates/:slug/deploy` | `{name, values:{}}` | `{stack, container:{id,name}}` 201 | operator |
+| GET | `/api/template-files` | – | `TemplateFilesStatus` | viewer |
+| POST | `/api/template-files/reload` | – | `TemplateFileSync & {status}` | admin |
 | GET | `/api/stacks` | – | `StackWithContainers[]` | viewer |
 | GET | `/api/stacks/:id` | – | `StackWithContainers` | viewer |
 | POST | `/api/stacks/:id/:action` | action ∈ `start\|stop` | `StackWithContainers` | operator |
@@ -607,6 +609,41 @@ Shared, frozen: `package.json` files, `tsconfig.json` files, `vite.config.ts`, `
 ---
 
 ## 10. Templates & stacks — owner: agent 4
+
+### 10.0 Where a template comes from
+
+`Template.source` is one of three values, and `GET /api/templates?source=` filters on it:
+
+| source | meaning |
+| --- | --- |
+| `builtin` | compiled into the image, from `templates/catalog.ts` |
+| `file` | a `*.json` file in `DOCKYARD_TEMPLATE_DIR` (default `<root>/data/templates`) |
+| `user` | authored in the panel through `POST`/`PATCH /api/templates` |
+
+The point of `file` is that the directory is a bind mount, so an operator adds a template by
+dropping a file on the host. No rebuild, no restart, no release.
+
+Precedence, highest first: `user`, `file`, `builtin`. A file therefore retags a builtin by
+claiming its slug, and removing the file brings the builtin back. A file never overwrites a
+`user` row; it is reported as skipped instead.
+
+Reconciliation is `templates/files.ts`, called from the read routes behind a directory stamp, so
+an unchanged directory costs one `readdir`. A file is validated with the same
+`templateSpecSchema` the API uses; a file that fails is reported and skipped, never thrown, so
+one bad file cannot take the catalog down or stop the panel from booting.
+
+Three file shapes are accepted: a bare spec object, an array of specs, or
+`{ "templates": [ ... ] }`. A file whose name starts with `.` or `_` is parked and ignored.
+See `deploy/template-examples/` for one of each.
+
+```ts
+// templates/files.ts
+export function scanTemplateFiles(dir?: string): TemplateFileScan;
+export function syncTemplateFiles(dir?: string): Promise<TemplateFileSync>;
+export function maybeResyncTemplateFiles(dir?: string): Promise<TemplateFileSync | null>;
+export function reloadTemplateFiles(dir?: string): Promise<TemplateFileSync>;
+export function templateFilesStatus(dir?: string): TemplateFilesStatus;
+```
 
 ```ts
 // templates/schema.ts

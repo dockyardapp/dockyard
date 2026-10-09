@@ -21,6 +21,12 @@ export type Config = {
   cloudflaredBin: string; // default 'cloudflared'
   tunnelDataDir: string; // default '<root>/data/tunnels'
   dataDir: string; // default '<root>/data'
+  /**
+   * Directory scanned for `*.json` template files. Default '<root>/data/templates', and a bind
+   * mount in docker-compose.yml, because the whole point is that the operator can add a template
+   * by dropping a file on the host rather than rebuilding the image.
+   */
+  templateDir: string;
   cloudflareApiToken: string;
   cloudflareAccountId: string;
   secretKey: string; // 64 hex chars
@@ -157,6 +163,7 @@ function buildConfig(): Config {
 
   const dataDir = resolveDir(process.env.DOCKYARD_DATA_DIR ?? process.env.DATA_DIR, 'data');
   const tunnelDataDir = resolveDir(process.env.TUNNEL_DATA_DIR, path.join('data', 'tunnels'));
+  const templateDir = resolveDir(process.env.DOCKYARD_TEMPLATE_DIR, path.join('data', 'templates'));
 
   return {
     env,
@@ -170,6 +177,7 @@ function buildConfig(): Config {
     cloudflaredBin: (process.env.CLOUDFLARED_BIN ?? '').trim() || 'cloudflared',
     tunnelDataDir,
     dataDir,
+    templateDir,
     cloudflareApiToken: (process.env.CLOUDFLARE_API_TOKEN ?? '').trim(),
     cloudflareAccountId: (process.env.CLOUDFLARE_ACCOUNT_ID ?? '').trim(),
     secretKey,

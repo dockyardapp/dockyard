@@ -1,4 +1,6 @@
-import { readFileSync } from 'node:fs';
+import { mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import path from 'node:path';
+import { fileURLToPath } from 'node:url';
 
 import { expect, test } from '@playwright/test';
 import type { Page } from '@playwright/test';
@@ -17,6 +19,9 @@ import {
  * tests), and no section logs a console error.
  */
 const admin = adminCredentials();
+
+/** web/e2e -> repo root, so a test can write into the real data/templates. */
+const REPO_ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', '..');
 
 const ROUTES: Array<{ path: string; heading: string }> = [
   { path: '/', heading: 'Dashboard' },
@@ -112,12 +117,18 @@ test('the templates page draws each product its own mark', async ({ page }) => {
 
   // Read the card's own name element rather than filtering on page text: one
   // product's description can mention another's name.
-  const cards = await page.locator('.tpl-card').evaluateAll((nodes) =>
+  const allCards = await page.locator('.tpl-card').evaluateAll((nodes) =>
     nodes.map((node) => ({
       name: node.querySelector('.tpl-name')?.textContent?.trim() ?? '',
       fill: node.querySelector('svg.tpl-icon')?.getAttribute('fill') ?? null,
+      tags: [...node.querySelectorAll('.tag')].map((t) => t.textContent?.trim() ?? ''),
     })),
   );
+
+  // Only the shipped catalog is guaranteed a vendored mark. A template that came
+  // from a file on the host falls back to its own icon, so scope to built-ins and
+  // the suite stays true whatever is in data/templates.
+  const cards = allCards.filter((c) => c.tags.includes('built-in'));
 
   const byName = new Map(cards.map((c) => [c.name, c.fill]));
 
@@ -132,6 +143,71 @@ test('the templates page draws each product its own mark', async ({ page }) => {
   expect(cards.length).toBeGreaterThanOrEqual(15);
   expect(cards.filter((c) => c.fill === null)).toEqual([]);
   expect(new Set(cards.map((c) => c.fill)).size).toBeGreaterThan(10);
+});
+
+test('a template file on disk shows up without a restart, and a bad one is reported', async ({ page }) => {
+  await login(page, admin.email, admin.password);
+
+  // The panel reads config.templateDir, which for this suite is the repo's own
+  // data/templates. Write a real file there, exactly as an operator would, and
+  // clean it up afterwards. No restart happens in between: the panel reconciles
+  // the directory before answering the next read.
+  const stamp = Date.now();
+  const slug = `e2e-file-${stamp}`;
+  const dir = path.join(REPO_ROOT, 'data', 'templates');
+  const good = path.join(dir, `${slug}.json`);
+  const bad = path.join(dir, `${slug}-broken.json`);
+  mkdirSync(dir, { recursive: true });
+
+  try {
+    writeFileSync(
+      good,
+      JSON.stringify({
+        schemaVersion: 1,
+        slug,
+        name: 'Dropped in by a test',
+        category: 'other',
+        icon: '🧪',
+        description: 'Written by the end-to-end suite.',
+        image: 'traefik/whoami',
+        tag: 'v1.11.0',
+        ports: [],
+        env: [],
+        volumes: [],
+        restartPolicy: 'unless-stopped',
+      }),
+    );
+
+    await page.goto('/templates');
+
+    // The card is there and says where it came from.
+    const card = page.locator('.tpl-card', { hasText: 'Dropped in by a test' });
+    await expect(card).toBeVisible();
+    await expect(card.locator('.tag', { hasText: 'from a file' })).toBeVisible();
+
+    // The files card names the file and lists the template it produced.
+    const filesCard = page.locator('.card', { hasText: 'Template files' });
+    const goodRow = filesCard.locator('tbody tr', { hasText: `${slug}.json` });
+    await expect(goodRow).toContainText(slug);
+    await expect(goodRow.locator('.pill')).toHaveText('loaded');
+
+    // The source filter knows about the new value.
+    await page.selectOption('select[aria-label="Filter by source"]', 'file');
+    await expect(card).toBeVisible();
+
+    // A malformed file is reported, and the good one still loads.
+    writeFileSync(bad, '{ this is not json');
+    await page.reload();
+
+    const badRow = page
+      .locator('.card', { hasText: 'Template files' })
+      .locator('tbody tr', { hasText: `${slug}-broken.json` });
+    await expect(badRow.locator('.pill')).toHaveText('error');
+    await expect(page.locator('.tpl-card', { hasText: 'Dropped in by a test' })).toBeVisible();
+  } finally {
+    rmSync(good, { force: true });
+    rmSync(bad, { force: true });
+  }
 });
 
 test('shows a 404 surface for an unknown route', async ({ page }) => {
@@ -385,7 +461,7 @@ test('no table hides its columns behind a sideways scroll', async ({ page }) => 
   // A long unbreakable value in a cell (a 64-char volume id, a UUID, an email) used to set
   // the column's min-content width and push the table past its container, so the last
   // columns were clipped and the operator had to scroll sideways to read them.
-  const ROUTES_WITH_TABLES = ['/', '/volumes', '/audit', '/images', '/networks', '/settings'];
+  const ROUTES_WITH_TABLES = ['/', '/templates', '/volumes', '/audit', '/images', '/networks', '/settings'];
 
   for (const route of ROUTES_WITH_TABLES) {
     await page.goto(route);
