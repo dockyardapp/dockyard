@@ -814,16 +814,53 @@ table.data .primary { color: var(--text-primary); font-weight: var(--fw-ui); }
 .login-brand { display: flex; align-items: center; gap: var(--space-3); margin-bottom: var(--space-6); }
 .login-brand .brand-mark { width: 26px; height: 26px; }
 .login-brand .brand-name { font-size: var(--fs-h3); }
+/*
+ * The decorative half of the login screen.
+ *
+ * This is the one surface in the product that carries no control, which is why it is the only
+ * place colour is allowed to be the point rather than a signal. Three layers, all built from
+ * tokens that already existed: a light source in brand indigo, a second dimmer one in accent
+ * violet so the field has depth instead of reading as a single blob, and a hairline grid that
+ * fades out before the edges so the panel looks engineered rather than like a stock mesh.
+ *
+ * Both blooms are centred well inside the panel. An earlier pass put the bright one at 22% x,
+ * which left its core hard against the seam, and a vignette along the seam then darkened the
+ * brightest part of the panel: the two fought, and the result read as a clipped circle rather
+ * than as light. The light moved inward and the vignette went away. The 1px hairline marks the
+ * seam on its own, which is how the rest of the product separates surfaces.
+ *
+ * It holds no text, so it has no contrast budget to spend. That is also why the markup is
+ * `aria-hidden`: there is nothing here for a screen reader to announce.
+ *
+ * The panel is static on purpose. A drifting background on a sign-in screen is a loop with no
+ * job, and it would need a reduced-motion escape hatch to be acceptable. Nothing to gate.
+ */
 .login-side {
-  background: var(--bg-panel);
+  position: relative;
   border-left: 1px solid var(--border-subtle);
-  padding: var(--space-8);
-  display: flex;
-  flex-direction: column;
-  justify-content: center;
-  gap: var(--space-5);
+  background-color: var(--bg-canvas);
+  background-image:
+    radial-gradient(52% 40% at 58% 30%, rgba(94, 106, 210, 0.42), transparent 74%),
+    radial-gradient(30% 26% at 24% 78%, rgba(113, 112, 255, 0.22), transparent 78%),
+    linear-gradient(158deg, var(--bg-panel) 0%, var(--bg-canvas) 100%);
 }
-.login-side h2 { font-size: var(--fs-sm); color: var(--text-tertiary); font-weight: var(--fw-ui); text-transform: uppercase; letter-spacing: 0.05em; }
+.login-side::before {
+  /* The grid, tied to the light: same centre and same extent as the indigo bloom, so the grid is
+     there where the panel is lit and gone where it is dark. The mask holds at full strength for
+     the first 55% and only then falls away, which is the important part: a straight linear ramp
+     from the centre would drop the hairlines below the visible threshold long before the light
+     ran out, and the lit area would resolve into a small disc sitting inside a larger glow. Both
+     masks reach zero before every edge of the panel, so the grid is never cut off by the
+     boundary either. */
+  content: '';
+  position: absolute;
+  inset: 0;
+  background-image:
+    repeating-linear-gradient(to right, rgba(255, 255, 255, 0.045) 0 1px, transparent 1px 32px),
+    repeating-linear-gradient(to bottom, rgba(255, 255, 255, 0.045) 0 1px, transparent 1px 32px);
+  -webkit-mask-image: radial-gradient(40% 29% at 58% 30%, #000 0%, #000 55%, transparent 100%);
+  mask-image: radial-gradient(40% 29% at 58% 30%, #000 0%, #000 55%, transparent 100%);
+}
 
 /* --------------------------------------------------------------- templates */
 .tpl-card {
@@ -866,7 +903,17 @@ table.data .primary { color: var(--text-primary); font-weight: var(--fw-ui); }
 @media (max-width: 960px) {
   .grid-4 { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .grid-3 { grid-template-columns: repeat(2, minmax(0, 1fr)); }
-  .login-wrap { grid-template-columns: 1fr; }
+  .login-wrap {
+    grid-template-columns: 1fr;
+    /* The panel is hidden below this width, so without a wash of its own the page would be a
+       flat black void with a form on it. The horizontal radius is kept under half the width and
+       the stop inside it, so the wash reaches full transparency before it meets either side edge:
+       a glow still visible where the viewport cuts it reads as a cropped image. Vertically it
+       falls away just above the form, which is centred and transparent, so the light lands in the
+       empty space instead of behind the text. */
+    background-image: radial-gradient(62% 40% at 50% -4%, rgba(94, 106, 210, 0.30), transparent 76%);
+    background-repeat: no-repeat;
+  }
   .login-side { display: none; }
 }
 

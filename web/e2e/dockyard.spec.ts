@@ -50,6 +50,28 @@ test('redirects an anonymous visitor to the login screen', async ({ page }) => {
   await expect(page.getByLabel('Password')).toBeVisible();
 });
 
+test('the login screen shows no host detail before anyone has signed in', async ({ page }) => {
+  const hostCalls: string[] = [];
+  page.on('request', (request) => {
+    if (/\/api\/system\/(info|health)/.test(request.url())) hostCalls.push(request.url());
+  });
+
+  await page.goto('/login');
+  await expect(page.getByLabel('Email')).toBeVisible();
+  await page.waitForLoadState('networkidle');
+
+  // The decorative half is a gradient and nothing else. It used to render the host's container and
+  // image counts and the panel's own version, which is not something an anonymous visitor can act
+  // on. It is aria-hidden because a landmark wrapping no content is announced as an empty region.
+  const aside = page.locator('.login-side');
+  await expect(aside).toHaveAttribute('aria-hidden', 'true');
+  await expect(aside).toBeEmpty();
+  await expect(page.getByText('Host status')).toHaveCount(0);
+
+  // And the page does not ask the API about the host at all until someone signs in.
+  expect(hostCalls).toEqual([]);
+});
+
 test('signs in through the real form and lands on the dashboard', async ({ page }) => {
   await login(page, admin.email, admin.password);
   await expect(page.getByRole('heading', { level: 1 })).toHaveText('Dashboard');

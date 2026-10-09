@@ -1,13 +1,10 @@
 import { useState } from 'react';
 import { Navigate, useLocation, useNavigate } from 'react-router-dom';
-import { endpoints, errorMessage } from '../api/client';
+import { errorMessage } from '../api/client';
 import { useAuth } from '../hooks/useAuth';
-import { usePolling } from '../hooks/usePolling';
-import { BrandMark, Icon } from '../components/Icons';
+import { BrandMark } from '../components/Icons';
 import { Banner, Button, TextField } from '../components/ui';
-import { formatDuration } from '../lib/format';
 import { MIN_PASSWORD_LENGTH, PASSWORD_HINT, PASSWORD_TOO_SHORT } from '../lib/password';
-import type { SystemInfo } from '../api/types';
 
 type Mode = 'login' | 'bootstrap';
 
@@ -20,11 +17,6 @@ export function LoginPage() {
   const [password, setPassword] = useState('');
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
-
-  const info = usePolling<SystemInfo>(() => endpoints.system.info(), {
-    intervalMs: 15000,
-    deps: [],
-  });
 
   if (!loading && user) {
     const from = (location.state as { from?: string } | null)?.from;
@@ -118,40 +110,13 @@ export function LoginPage() {
         </div>
       </div>
 
-      <aside className="login-side" aria-label="Host status">
-        <h2>Host status</h2>
-        {info.error ? (
-          <Banner tone="error" title="Cannot reach the API">
-            {errorMessage(info.error)}
-          </Banner>
-        ) : null}
-        {info.data ? (
-          <dl className="kv">
-            <dt>Mode</dt>
-            <dd>
-              {info.data.mode === 'demo' ? (
-                <span className="row" style={{ gap: 'var(--space-2)' }}>
-                  <Icon name="warning" size={13} /> demo (no Docker engine)
-                </span>
-              ) : (
-                'real'
-              )}
-            </dd>
-            <dt>Docker</dt>
-            <dd>{info.data.docker.ok ? info.data.docker.version ?? 'connected' : 'unavailable'}</dd>
-            <dt>Database</dt>
-            <dd>{info.data.db.ok ? info.data.db.serverVersion ?? 'connected' : 'unavailable'}</dd>
-            <dt>cloudflared</dt>
-            <dd>{info.data.cloudflared.ok ? info.data.cloudflared.version ?? 'installed' : 'not found'}</dd>
-            <dt>Uptime</dt>
-            <dd>{formatDuration(info.data.uptime)}</dd>
-            <dt>Version</dt>
-            <dd className="mono-cell">{info.data.version}</dd>
-          </dl>
-        ) : (
-          <p className="dim" style={{ fontSize: 'var(--fs-xs)' }}>Reading host status.</p>
-        )}
-      </aside>
+      {/*
+        The decorative half of the screen. It is the one surface in the product with no control
+        on it, which is why it is the only place colour is allowed to be the point rather than a
+        signal. It carries no text, so there is nothing here to announce: `aria-hidden` keeps a
+        landmark with no content out of the accessibility tree.
+      */}
+      <div className="login-side" aria-hidden="true" />
     </div>
   );
 }

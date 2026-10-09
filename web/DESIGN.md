@@ -183,6 +183,8 @@ components:
     backgroundColor: "{colors.raised}"
     textColor: "{colors.text-primary}"
     typography: "{typography.body}"
+  login-aside:
+    backgroundColor: "{colors.canvas}"
 ---
 
 ## Overview
@@ -325,6 +327,24 @@ signals element size rather than adding decoration.
     answers for it. A guide that silently omits a mode is worse than no guide.
   - The tab lives in the URL (`?tab=how`), like the container detail tabs, so it survives a reload and
     can be linked to.
+- **login-aside:** the decorative right half of the login screen, and the one place in the product
+  where colour is the point rather than a signal. It replaces a host-status block that used to be
+  there: before anyone has signed in, a list of the host's container and image counts is not
+  information the reader can act on, and it put the panel's own version on a page reachable by
+  anyone who finds the URL. Four details are load-bearing:
+  - It is a `div` with `aria-hidden="true"`, not an `aside`. A labelled landmark wrapping no content
+    is announced to a screen reader as an empty region, which is worse than no landmark.
+  - It carries no text, so it has no contrast budget to spend, and the gradient may be as dim as the
+    design wants without a ratio to defend.
+  - The grid's mask is centred on the same point and sized to the same extent as the indigo bloom, so
+    the lattice is legible where the panel is lit and gone where it is dark. The mask holds full
+    strength for the first 55% before falling away: a straight ramp from the centre drops the
+    hairlines below the visible threshold long before the light runs out, and the lit area then
+    resolves into a small disc sitting inside a larger glow.
+  - Both masks reach full transparency before the panel's edges. A gradient still visible where the
+    container cuts it reads as a cropped image rather than as light.
+  Below 960px the panel is hidden and the page keeps the wash instead, so the phone is not a flat
+  void: the same idea at one glow, sized so it too ends before the edges.
 
 ## Long lists
 
@@ -346,24 +366,40 @@ Measured on a host with 261 volumes: 250 rows rendered, the footer reported "Sho
 - Do reserve the accent for interactive elements. Never use it as decoration.
 - Do use monospace for anything the operator might copy: ids, image tags, ports, URLs, log lines.
 - Do pair every destructive control with a confirm dialog and a disabled or busy state.
-- Don't use gradients as decoration, glassmorphism, or emoji in UI chrome. Template icons are data
-  and are the one exception, and only for a template with no brand mark of its own.
+- Don't use gradients in the working chrome: no gradient buttons, headers, rails or chart fills.
+  The single exception is the login screen's decorative half (`login-aside`), which is the only
+  surface in the product with no control on it, so it is the only place colour may be the point
+  rather than a signal. It draws from the brand indigo family and nothing else.
+- Don't use glassmorphism, or emoji in UI chrome. Template icons are data and are the other
+  exception, and only for a template with no brand mark of its own.
 - Don't use pure white as body text. `#f7f8f8` is the ceiling.
 - Don't introduce warm greys into the chrome.
 
 ## Surface and slop self-audit
 
-Scored against the ten tells in `claude-design`. Result: 0/10.
+Scored against the ten tells in `claude-design`. Result: **1/10**, and the tell that fires is the
+exception the brief asked for.
 
-1. Tech gradient: none. Flat dark surfaces only.
+1. Tech gradient: **fires once, deliberately.** The login screen's right half is a gradient. It is
+   confined to that one panel; every other surface in the product is flat. It is built from the
+   brand's own indigo rather than an invented blue: the lit point measures hue 233 deg against
+   `accent`'s 234 deg, held at 26% lightness and 33% saturation, so it reads as the accent emerging
+   from darkness instead of a second palette. It is static, so there is nothing to gate behind
+   `prefers-reduced-motion`.
 2. Generic tech hue: the accent is Linear's indigo-violet, taken from the source system rather than
    chosen by default.
 3. Feature-tile grid: absent. The dashboard is stat tiles plus live tables, not three equal cards.
 4. Accent rail: absent. No coloured left strips on cards.
 5. Unearned blur: absent. No backdrop blur anywhere.
-6. Monument stat: bounded. Tiles are one row of small numbers, not oversized display figures.
+6. Monument stat: bounded. Tiles are one row of small numbers, not oversized display figures. The
+   login screen previously showed a host-status block; it now shows nothing at all, so no figure is
+   displayed before anyone has signed in.
 7. Icon topper: absent. Icons appear in nav and buttons only, never centred above a heading.
-8. Center stack: absent. The composition is a left rail plus a dense work column.
+8. Center stack: absent from the console. The login form is centred inside its own column, which is
+   ordinary for a surface that is one field set, and the page itself is a committed two-column
+   split rather than a stack.
 9. Default type: Inter and JetBrains Mono are the source system's fonts, declared deliberately with
    system fallbacks.
-10. Wrong surface: the brief named this an **operate** surface and the composition matches it.
+10. Wrong surface: the brief named this an **operate** surface and the composition matches it. The
+    login screen is a **configure** surface, so it keeps one quiet field set and puts the only
+    expressive element on the half nobody interacts with.
