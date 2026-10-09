@@ -234,6 +234,7 @@ export type DockerInfo = {
 
 export type SystemInfo = {
   version: string;
+  build: BuildInfo;
   uptime: number;
   publicUrl: string;
   docker: DockerInfo;
@@ -362,3 +363,86 @@ export type ExecResponse = { stdout: string; stderr: string; exitCode: number };
 export type DeployResponse = { stack: StackRow; container: { id: string; name: string } };
 export type PullResponse = { ok: true; ref: string };
 export type CloudflareCredsResponse = { ok: true; verified: boolean; error?: string };
+
+/* ------------------------------------------------- §6 version and updates */
+
+/** Which build is running. `commit` is empty when it could not be determined. */
+export type BuildInfo = {
+  version: string;
+  commit: string;
+  commitShort: string;
+  builtAt: string | null;
+  /** False when the running commit is unknown, so "up to date" cannot be claimed. */
+  pinned: boolean;
+};
+
+export type UpstreamCommit = {
+  sha: string;
+  commitShort: string;
+  subject: string;
+  author: string;
+  date: string;
+  url: string;
+};
+
+export type UpdateCheck = {
+  checkedAt: string;
+  repo: string;
+  branch: string;
+  authenticated: boolean;
+  /** The relationship of the running commit to the branch tip. */
+  status: 'current' | 'behind' | 'ahead' | 'diverged' | 'unknown';
+  behindBy: number;
+  aheadBy: number;
+  latest: {
+    version: string | null;
+    commit: string;
+    commitShort: string;
+    subject: string;
+    author: string;
+    date: string;
+    url: string;
+  } | null;
+  /** The commits an update would bring in, newest first. */
+  commits: UpstreamCommit[];
+  rateLimit: { remaining: number | null; limit: number | null; resetAt: string | null };
+  error: string | null;
+};
+
+export type UpdateJobState = 'queued' | 'running' | 'success' | 'failed' | 'rolled-back' | 'stale';
+
+export type UpdateJob = {
+  id: string;
+  state: UpdateJobState;
+  step: string | null;
+  message: string | null;
+  requestedAt: string | null;
+  requestedBy: string | null;
+  startedAt: string | null;
+  finishedAt: string | null;
+  from: { version: string | null; commit: string | null };
+  to: { version: string | null; commit: string | null };
+  log: string | null;
+};
+
+export type UpdaterInfo = {
+  /** False when the host has no updater installed, so the button cannot work. */
+  installed: boolean;
+  installedAt: string | null;
+  spoolDir: string;
+  enabled: boolean;
+};
+
+export type UpdateStatus = {
+  build: BuildInfo;
+  check: UpdateCheck;
+  job: UpdateJob | null;
+  updater: UpdaterInfo;
+  canUpdate: boolean;
+};
+
+export type StartUpdateResponse = {
+  requested: true;
+  request: { id: string; requestedAt: string; requestedBy: string; branch: string };
+  job: UpdateJob | null;
+};

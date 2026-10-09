@@ -1,0 +1,14 @@
+[Unit]
+Description=Watch for a Dockyard update request from the panel
+Documentation=file:@REPO_DIR@/deploy/README.md
+After=docker.service docker.socket
+
+[Path]
+# The panel writes this file when an administrator presses "Install update". A path unit is what
+# keeps the panel out of the business of replacing its own container: the container only ever
+# writes a file.
+PathChanged=@SPOOL_DIR@/request.json
+Unit=dockyard-updater.service
+
+[Install]
+WantedBy=multi-user.target

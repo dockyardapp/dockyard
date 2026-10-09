@@ -33,6 +33,15 @@ export type Config = {
    * end-to-end suite raises it because it signs in many throwaway accounts.
    */
   loginRateMax: number;
+  /** GitHub `owner/name` this panel updates from. */
+  updateRepo: string;
+  updateBranch: string;
+  /** Optional token. Only needed while the repository is private. */
+  updateToken: string;
+  /** Directory the panel writes update requests to and reads updater status from. */
+  updateSpoolDir: string;
+  /** False refuses POST /api/system/update; the check stays available. */
+  updateEnabled: boolean;
 };
 
 const moduleDir = path.dirname(fileURLToPath(import.meta.url));
@@ -169,6 +178,11 @@ function buildConfig(): Config {
     adminEmail: (process.env.DOCKYARD_ADMIN_EMAIL ?? '').trim(),
     adminPassword: process.env.DOCKYARD_ADMIN_PASSWORD ?? '',
     loginRateMax: positiveInt(process.env.DOCKYARD_LOGIN_RATE_MAX, 10),
+    updateRepo: (process.env.DOCKYARD_UPDATE_REPO ?? '').trim() || 'EliasL-git/dockyard',
+    updateBranch: (process.env.DOCKYARD_UPDATE_BRANCH ?? '').trim() || 'main',
+    updateToken: (process.env.DOCKYARD_UPDATE_TOKEN ?? '').trim(),
+    updateSpoolDir: resolveDir(process.env.DOCKYARD_UPDATE_SPOOL, path.join('data', 'update')),
+    updateEnabled: !['false', '0', 'no'].includes((process.env.DOCKYARD_UPDATE_ENABLED ?? '').trim().toLowerCase()),
   };
 }
 

@@ -402,10 +402,12 @@ The first user created is `admin`.
 | GET | `/api/settings` | – | `SettingsView` (secrets masked) | admin |
 | PATCH | `/api/settings` | `{...}` | `SettingsView` | admin |
 | GET | `/api/audit` | `?limit=100&offset=0&action=` | `AuditEntry[]` | admin |
+| GET | `/api/system/update` | – | `UpdateStatus` | any |
+| POST | `/api/system/update` | – | `{requested:true,request,job}` 202 | admin |
 
 `SystemInfo`:
 ```ts
-{ version: string; uptime: number; publicUrl: string;
+{ version: string; build: BuildInfo; uptime: number; publicUrl: string;
   docker: { ok: boolean; version?: string; apiVersion?: string; os?: string; arch?: string;
             containers?: { total: number; running: number; paused: number; stopped: number };
             images?: number; error?: string };
@@ -416,6 +418,57 @@ The first user created is `admin`.
             networks: number; tunnels: number; tunnelsActive: number; stacks: number; templates: number };
   mode: 'real' | 'demo'; }
 ```
+
+`BuildInfo` — the running build. `commit` is `''` and `pinned` is `false` when the image was built
+without the `GIT_COMMIT` build argument, in which case an update check cannot say "you are current".
+```ts
+{ version: string; commit: string; commitShort: string; builtAt: string | null; pinned: boolean }
+```
+
+`UpdateStatus` — what is running, what is upstream, and how the last update went. Always 200 with
+`build` present, even when GitHub is unreachable, because the chrome draws the running version from
+this same payload.
+```ts
+{ build: BuildInfo;
+  check: { checkedAt: string; repo: string; branch: string; authenticated: boolean;
+           status: 'current'|'behind'|'ahead'|'diverged'|'unknown';
+           behindBy: number; aheadBy: number;
+           latest: { version: string|null; commit: string; commitShort: string; subject: string;
+                     author: string; date: string; url: string } | null;
+           commits: Array<{ sha: string; commitShort: string; subject: string; author: string;
+                            date: string; url: string }>;      // newest first, only when behind
+           rateLimit: { remaining: number|null; limit: number|null; resetAt: string|null };
+           error: string | null };
+  job: UpdateJob | null;
+  updater: { installed: boolean; installedAt: string | null; spoolDir: string; enabled: boolean };
+  canUpdate: boolean }
+```
+
+`UpdateJob` — the state the panel and the host updater share through `data/update/`.
+```ts
+{ id: string; state: 'queued'|'running'|'success'|'failed'|'rolled-back'|'stale';
+  step: string | null; message: string | null;
+  requestedAt: string | null; requestedBy: string | null;
+  startedAt: string | null; finishedAt: string | null;
+  from: { version: string|null; commit: string|null };
+  to:   { version: string|null; commit: string|null };
+  log: string | null }
+```
+
+**How an update is applied.** The panel cannot replace its own container, so `POST` writes
+`request.json` into the update spool and returns 202. A systemd path unit on the host
+(`deploy/install-updater.sh`) runs `deploy/update.sh`, which fetches, verifies the move is a
+fast-forward, resets the checkout, rebuilds the image, recreates the container and waits for
+`/api/system/health`, rolling back to the previous commit if that fails. The script publishes
+`status.json` back into the same directory, which is what `job` above is read from.
+
+`POST` refuses with 409 when the running commit is already the tip, when it is ahead or diverged
+(a pull would not fast-forward), when the comparison is impossible, or when no updater is installed
+on the host. A button that silently does nothing is worse than a disabled one.
+
+The check reads the GitHub compare endpoint rather than comparing shas, so a build made from a local
+commit ahead of origin is not reported as an available update. While the repository is private the
+check needs `DOCKYARD_UPDATE_TOKEN`; opening the repository removes that need.
 
 `Template`:
 ```ts

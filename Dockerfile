@@ -25,6 +25,11 @@ RUN apk add --no-cache curl ca-certificates \
  && chmod 0755 /usr/local/bin/cloudflared
 
 FROM node:26-alpine AS runtime
+# Baked in so the panel can report which commit it is running. `deploy/update.sh` passes these;
+# a bare `docker compose build` leaves them empty and the panel says the commit is unknown rather
+# than claiming it is current.
+ARG GIT_COMMIT=
+ARG BUILD_TIME=
 RUN apk add --no-cache ca-certificates tini \
  && addgroup -g 1001 -S dockyard \
  && adduser -u 1001 -S dockyard -G dockyard
@@ -44,7 +49,9 @@ ENV NODE_ENV=production \
     PORT=8000 \
     HOST=0.0.0.0 \
     TUNNEL_DATA_DIR=/app/data/tunnels \
-    CLOUDFLARED_BIN=/usr/local/bin/cloudflared
+    CLOUDFLARED_BIN=/usr/local/bin/cloudflared \
+    DOCKYARD_COMMIT=$GIT_COMMIT \
+    DOCKYARD_BUILD_TIME=$BUILD_TIME
 
 # The panel must reach the Docker socket; mounting /var/run/docker.sock is the
 # expected deployment. It runs as a non-root user, so the socket needs to be

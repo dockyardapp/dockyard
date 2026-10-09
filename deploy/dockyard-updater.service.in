@@ -1,0 +1,14 @@
+[Unit]
+Description=Dockyard self-update (pull, rebuild, restart, roll back on failure)
+Documentation=file:@REPO_DIR@/deploy/README.md
+After=docker.service docker.socket
+Wants=docker.service
+
+[Service]
+Type=oneshot
+WorkingDirectory=@REPO_DIR@
+ExecStart=@REPO_DIR@/deploy/update.sh
+# A build takes minutes on a small VPS and systemd would otherwise kill the unit mid-rebuild,
+# which is the one failure mode that leaves the panel down.
+TimeoutStartSec=0
+RemainAfterExit=no

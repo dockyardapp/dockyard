@@ -77,6 +77,35 @@ curl -sI http://<host>/containers              # 301 to the https origin
 Check the cookie is marked secure by signing in and inspecting the
 `Set-Cookie` header: it must carry `Secure` and `HttpOnly`.
 
+## 4. Updates
+
+The panel can pull a newer build of itself, but it cannot replace its own container, so the work
+happens on the host:
+
+```bash
+sudo ./deploy/install-updater.sh
+```
+
+That creates `data/update/`, gives it to the panel's uid so the container can write a request into
+it, installs `dockyard-updater.service` and `dockyard-updater.path`, and writes the marker file the
+panel reads to decide whether **Install update** can work. Re-running it is safe.
+
+From then on, pressing **Install update** on the panel's Settings page writes
+`data/update/request.json`, the path unit fires, and `deploy/update.sh` runs:
+
+1. fetch `origin/<branch>`, and refuse unless the move is a fast-forward of the running commit
+2. `git reset --hard` the checkout (refuses first if it has local modifications; `--force` discards)
+3. rebuild the panel image with `GIT_COMMIT` and `BUILD_TIME` set, then `docker compose up -d`
+4. poll `http://127.0.0.1:${PANEL_PORT}/api/system/health` for up to 180s
+5. on failure, reset to the previous commit, rebuild and restart that, and report `rolled-back`
+
+Every step is written to `data/update/status.json` and `data/update/update.log`, which is what the
+panel's update card renders. Watch a run with `systemctl status dockyard-updater` or
+`tail -f data/update/update.log`.
+
+No systemd on the host? `install-updater.sh` says so and leaves you a cron line instead. The
+updater is also fine to run by hand at any time, with no panel involved.
+
 ## What was verified
 
 The config in this directory was run for real against a production-mode instance
@@ -103,7 +132,10 @@ alternate ports. 19 of 19 server-side probes and 11 of 11 in a real browser:
 - Migrations run on boot, which is correct for one instance and wrong for
   several: concurrent boots can collide. Move `npm run migrate` into the deploy
   step once there is more than one replica.
-- The container healthcheck and `systemd` unit are not included in this repo.
+- The container healthcheck is in the `Dockerfile`; the updater's systemd units are in `deploy/`
+  and installed by `deploy/install-updater.sh`. Nothing else assumes systemd.
+- The updater rebuilds on the host, so a deployment with more than one replica needs the panel
+  pinned to one before `Install update` means anything.
 - The frontend's list views cap rendering at 250 rows per table
   (`useRowCap`); the audit log paginates instead.
 - The live quick-tunnel test is opt-in (`npm run test:live`) because it needs a

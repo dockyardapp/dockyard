@@ -210,6 +210,34 @@ textarea:focus-visible {
 .topbar-sub { color: var(--text-quaternary); font-size: var(--fs-xs); }
 .topbar-actions { margin-left: auto; display: flex; align-items: center; gap: var(--space-2); }
 
+/* The running build, in the chrome rather than behind Settings. Monospace because it is an
+   identifier an operator reads back over the phone, not prose. */
+.version-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  padding: 3px var(--space-2);
+  border: 1px solid transparent;
+  border-radius: var(--radius-md);
+  color: var(--text-tertiary);
+  font-family: var(--font-mono);
+  font-size: var(--fs-micro);
+  text-decoration: none;
+  white-space: nowrap;
+}
+.version-badge:hover {
+  color: var(--text-secondary);
+  background: var(--bg-surface);
+  border-color: var(--border-subtle);
+}
+.version-badge.has-update { color: var(--accent-hover); }
+.version-badge-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: var(--radius-pill);
+  background: var(--accent-violet);
+}
+
 .content {
   padding: var(--space-5);
   max-width: var(--content-max);
@@ -587,6 +615,23 @@ table.data .primary { color: var(--text-primary); font-weight: var(--fw-ui); }
 }
 .log-view .log-line { display: block; }
 .log-view .log-line:hover { background: rgba(255, 255, 255, 0.03); }
+
+/* The updater's own output, inside a banner rather than filling a page like .log-view. */
+.update-log {
+  font-family: var(--font-mono);
+  font-size: var(--fs-micro);
+  line-height: 1.55;
+  background: #050506;
+  color: var(--text-secondary);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-md);
+  padding: var(--space-3);
+  margin: var(--space-2) 0 0;
+  max-height: 240px;
+  overflow: auto;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
 
 /* --------------------------------------------------------------- console */
 .console-out {

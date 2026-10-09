@@ -26,6 +26,12 @@ services:
   panel:
     build:
       context: .
+      args:
+        # Stamped into the image so the panel can name the commit it is running. deploy/update.sh
+        # exports both; a plain `docker compose build` leaves them empty, and the panel then
+        # reports the commit as unknown instead of claiming to be current.
+        GIT_COMMIT: ${GIT_COMMIT:-}
+        BUILD_TIME: ${BUILD_TIME:-}
     restart: unless-stopped
     depends_on:
       db:
@@ -46,6 +52,12 @@ services:
       CLOUDFLARE_ACCOUNT_ID: ${CLOUDFLARE_ACCOUNT_ID:-}
       DOCKYARD_ADMIN_EMAIL: ${DOCKYARD_ADMIN_EMAIL:-admin@dockyard.local}
       DOCKYARD_ADMIN_PASSWORD: ${DOCKYARD_ADMIN_PASSWORD:-}
+      # Version and update checks. The repository may stay private: set DOCKYARD_UPDATE_TOKEN to
+      # a read-only token, or open the repository and leave it empty.
+      DOCKYARD_UPDATE_REPO: ${DOCKYARD_UPDATE_REPO:-EliasL-git/dockyard}
+      DOCKYARD_UPDATE_BRANCH: ${DOCKYARD_UPDATE_BRANCH:-main}
+      DOCKYARD_UPDATE_TOKEN: ${DOCKYARD_UPDATE_TOKEN:-}
+      DOCKYARD_UPDATE_ENABLED: ${DOCKYARD_UPDATE_ENABLED:-true}
     extra_hosts:
       - "host.docker.internal:host-gateway"
     # The socket is root:docker 0660 on a stock host, and the image runs as uid
@@ -65,6 +77,9 @@ services:
       - /var/run/docker.sock:/var/run/docker.sock
       # Named-tunnel credentials and cloudflared configs.
       - dockyard-data:/app/data
+      # The update spool is a bind mount rather than a volume, because the host-side updater in
+      # deploy/update.sh has to read the request the panel writes here and publish its status back.
+      - ./data/update:/app/data/update
 
 volumes:
   dockyard-pg:

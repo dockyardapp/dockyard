@@ -318,6 +318,40 @@ test('the create-tunnel dialog offers localtunnel, which needs no Cloudflare acc
   await expect(dialog.getByRole('button', { name: 'Create tunnel' })).toBeEnabled();
 });
 
+test('the running version is visible in the chrome and detailed on settings', async ({ page }) => {
+  await login(page, admin.email, admin.password);
+
+  // Which build is deployed is the first question anyone asks, so it lives in the top bar rather
+  // than behind a settings screen.
+  const badge = page.getByRole('link', { name: /^Version \d/ });
+  await expect(badge).toBeVisible();
+  await expect(badge).toContainText(/^v\d+\.\d+\.\d+/);
+
+  await page.goto('/settings');
+  await expect(page.getByRole('heading', { name: 'Version' })).toBeVisible();
+
+  // The card names the build, its commit and where it came from. The upstream check may fail on a
+  // host with no route to GitHub, so the assertions stop at what the panel knows locally.
+  const card = page.locator('.card', { has: page.getByRole('heading', { name: 'Version' }) });
+  await expect(card).toContainText('v0.2.0');
+  await expect(card).toContainText('EliasL-git/dockyard');
+  await expect(card.getByRole('button', { name: 'Check for updates' })).toBeEnabled();
+});
+
+test('the update card refuses to promise an update it cannot deliver', async ({ page }) => {
+  await login(page, admin.email, admin.password);
+  await page.goto('/settings');
+
+  const card = page.locator('.card', { has: page.getByRole('heading', { name: 'Version' }) });
+  const install = card.getByRole('button', { name: /Install update/ });
+
+  // No updater is installed on the test host and the branch tip is not known here, so the button
+  // must be present but disabled, and the reason has to be on screen. A button that silently does
+  // nothing is the failure this guards.
+  await expect(install).toBeDisabled();
+  await expect(card).toContainText(/install-updater\.sh|Nothing to install|already the tip|tip of main/);
+});
+
 test('no table hides its columns behind a sideways scroll', async ({ page }) => {
   await login(page, admin.email, admin.password);
 

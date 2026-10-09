@@ -4,6 +4,7 @@ import { useAuth } from '../hooks/useAuth';
 import { useEvents } from '../hooks/useEvents';
 import { can } from '../lib/rbac';
 import { BrandMark, Icon, type IconName } from './Icons';
+import { VersionBadge } from './VersionBadge';
 import { Banner, Button, Pill } from './ui';
 
 type NavEntry = { to: string; label: string; icon: IconName; adminOnly?: boolean };
@@ -144,6 +145,7 @@ export function AppShell() {
           />
           <span className="topbar-title">{title}</span>
           <div className="topbar-actions">
+            <VersionBadge />
             <Pill state={eventTone}>{status === 'open' ? 'live' : status}</Pill>
           </div>
         </header>

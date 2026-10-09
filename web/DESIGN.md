@@ -277,6 +277,14 @@ signals element size rather than adding decoration.
   rhythm tightens (group-label and item padding) so all ten entries fit without a scrollbar, and below
   620px it tightens again; under that the list scrolls, and the footer stays visible.
 - **stat-value:** the large tabular number in a dashboard tile.
+- **version-badge:** the running build, in the top bar of every page. Monospace `v0.2.0 · 225b0b5`,
+  because it is an identifier an operator reads back over the phone rather than prose. It is a link
+  to Settings, where the full card lives, and it carries `has-update` (accent-hover text plus a
+  violet dot) when the build is behind its branch. It draws from the same payload the update card
+  uses, so the version stays on screen when the upstream check fails.
+- **update-log:** the updater's own output, inside a banner. Same monospace and near-black as
+  `log-view`, but capped at 240px with its own border, because it is a footnote to a status line
+  rather than a page of its own.
 - **code-inline:** monospace on canvas, for ids and ports inside prose.
 - **link / link-hover:** accent violet, brightening to `accent-hover` on hover.
 - **pill-*:** status badges. One pill per state, never two.

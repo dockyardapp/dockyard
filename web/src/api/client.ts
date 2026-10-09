@@ -30,10 +30,12 @@ import type {
   ScopeMode,
   SettingsView,
   StackWithContainers,
+  StartUpdateResponse,
   SystemInfo,
   Template,
   TemplateSpec,
   Tunnel,
+  UpdateStatus,
   UserRole,
   VolumeSummary,
 } from './types';
@@ -153,6 +155,10 @@ export const endpoints = {
   system: {
     health: () => api.get<{ ok: true; uptime: number }>('/api/system/health'),
     info: () => api.get<SystemInfo>('/api/system/info'),
+    /** Running build, upstream check and the last update job. */
+    update: () => api.get<UpdateStatus>('/api/system/update'),
+    /** Ask the host updater to pull the branch and rebuild. Admin only. */
+    startUpdate: () => api.post<StartUpdateResponse>('/api/system/update'),
   },
   auth: {
     me: () => api.get<MeResponse>('/api/auth/me'),

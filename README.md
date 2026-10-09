@@ -203,6 +203,35 @@ in **Settings** (stored AES-256-GCM encrypted in the `settings` table) or via
 `CLOUDFLARE_API_TOKEN` / `CLOUDFLARE_ACCOUNT_ID`. The token is never returned by the API and never
 logged.
 
+## Version and updates
+
+The panel shows the build it is running in the top bar of every page (`v0.2.0 · 225b0b5`), and the
+full detail on **Settings**: version, commit, build time, source repository and branch. The badge
+links there.
+
+Updates are pulled from GitHub and applied by a script on the host, because a container cannot
+replace its own image. The panel writes `data/update/request.json`; a systemd path unit runs
+`deploy/update.sh`, which fetches, checks the move is a fast-forward, resets the checkout, rebuilds
+the image, recreates the container and waits for the health endpoint. If the new build does not come
+up it puts the previous commit back and rebuilds that, so a bad commit costs one build rather than
+an outage.
+
+```bash
+sudo ./deploy/install-updater.sh     # once, on the host, to wire up the button
+./deploy/update.sh                   # or update by hand, any time
+```
+
+Until the updater is installed the panel says so and leaves **Install update** disabled. A button
+that silently does nothing is worse than a disabled one.
+
+The check reads the GitHub compare endpoint, so a build made from a local commit ahead of origin is
+not reported as an available update. While the repository is private the check needs
+`DOCKYARD_UPDATE_TOKEN` (read-only is enough); once the repository is public the token is not
+needed. Set `DOCKYARD_UPDATE_ENABLED=false` to take the feature out of the UI entirely.
+
+Builds stamp the commit into the image via the `GIT_COMMIT` build argument, which `deploy/update.sh`
+passes. A build made without it reports the commit as unknown rather than claiming to be current.
+
 ## Security notes
 
 - Mounting the Docker socket gives the panel root-equivalent power over the host. Put it behind

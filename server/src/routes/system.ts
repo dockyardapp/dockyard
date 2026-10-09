@@ -8,10 +8,11 @@
 // is omitted. `mode` is 'demo' whenever the Docker engine is unreachable.
 
 import { execFile } from 'node:child_process';
-import fs from 'node:fs';
-import path from 'node:path';
 import type { FastifyInstance } from 'fastify';
-import { config, repoRoot } from '../config.ts';
+import { config } from '../config.ts';
+import { buildInfo } from '../version.ts';
+import { checkForUpdate, getCheck } from '../update/check.ts';
+import { readJob, updaterInfo, writeRequest } from '../update/spool.ts';
 import { logger } from '../logger.ts';
 import { one } from '../db/pool.ts';
 import { many } from '../db/pool.ts';
@@ -21,30 +22,14 @@ import { listStacks } from '../stacks.ts';
 import { tunnelManager } from '../tunnels/manager.ts';
 import { filterTunnels } from '../tunnels/visibility.ts';
 import { authenticate } from '../auth/sessions.ts';
+import { auditFromRequest } from '../auth/audit.ts';
+import { can, requireAuth, requireRole, sendError } from '../auth/rbac.ts';
 import { canSee, filterVisible, isUnrestricted } from '../auth/scope.ts';
 import type { Scope } from '../auth/scope.ts';
 
 // ---------------------------------------------------------------------------
 // Helpers
 // ---------------------------------------------------------------------------
-
-let cachedVersion: string | null = null;
-function appVersion(): string {
-  if (cachedVersion) return cachedVersion;
-  for (const rel of ['package.json', path.join('server', 'package.json')]) {
-    try {
-      const pkg = JSON.parse(fs.readFileSync(path.join(repoRoot, rel), 'utf8')) as { version?: string };
-      if (pkg.version) {
-        cachedVersion = String(pkg.version);
-        return cachedVersion;
-      }
-    } catch {
-      /* try the next candidate */
-    }
-  }
-  cachedVersion = '0.0.0';
-  return cachedVersion;
-}
 
 type CloudflaredInfo = { ok: boolean; version?: string; path: string; error?: string };
 let cloudflaredCache: { at: number; value: CloudflaredInfo } | null = null;
@@ -266,7 +251,8 @@ export default async function systemRoutes(app: FastifyInstance): Promise<void> 
     }
 
     const info = {
-      version: appVersion(),
+      version: buildInfo.version,
+      build: buildInfo,
       uptime: Math.round(process.uptime()),
       publicUrl: config.publicUrl,
       docker: dockerOut,
@@ -279,5 +265,97 @@ export default async function systemRoutes(app: FastifyInstance): Promise<void> 
 
     if (!docker.ok) logger.debug('system info: docker unreachable', { error: docker.error });
     return reply.code(200).send(info);
+  });
+
+  // -------------------------------------------------------------------------
+  // Version and updates
+  // -------------------------------------------------------------------------
+
+  /**
+   * What is running, what is upstream, and how the last update went.
+   *
+   * Requires a session, unlike `/system/info`: an anonymous caller has no use for it and every
+   * read drives a GitHub API call against a shared rate limit.
+   *
+   * Always 200 with `build` present, even when GitHub cannot be reached: the caller draws the
+   * running version from this same payload, so a failed check must not blank the UI.
+   */
+  app.get('/system/update', { preHandler: requireAuth() }, async (req, reply) => {
+    const check = await getCheck();
+    return reply.code(200).send({
+      build: buildInfo,
+      check,
+      job: readJob(),
+      updater: updaterInfo(),
+      canUpdate: can(req.user?.role ?? null, 'admin'),
+    });
+  });
+
+  /**
+   * Ask the host to update.
+   *
+   * The panel does not rebuild itself: it writes a request the host updater picks up. Refusing
+   * when nothing would collect the request is the whole point — a button that silently does
+   * nothing is worse than a disabled one.
+   */
+  app.post('/system/update', { preHandler: requireRole('admin') }, async (req, reply) => {
+    if (!config.updateEnabled) {
+      return sendError(reply, 409, 'conflict', 'updates are disabled on this host (DOCKYARD_UPDATE_ENABLED=false)');
+    }
+
+    const updater = updaterInfo();
+    if (!updater.installed) {
+      return sendError(
+        reply,
+        409,
+        'conflict',
+        'no updater is installed on this host, so a request would never be collected. Run ' +
+          'deploy/install-updater.sh on the host, or deploy/update.sh to update by hand.',
+      );
+    }
+
+    const check = await checkForUpdate(true);
+    if (check.error) {
+      // The frozen code list has no "upstream unreachable" entry, and a new code would be a
+      // contract change for a transient condition. The refusal is reported as a conflict with
+      // the cause in the message; GET /system/update carries the detail.
+      return sendError(reply, 409, 'conflict', `could not check for updates: ${check.error}`);
+    }
+    if (check.status === 'current') {
+      return sendError(reply, 409, 'conflict', `this build is already the tip of ${check.branch}`);
+    }
+    if (check.status === 'ahead' || check.status === 'diverged') {
+      return sendError(
+        reply,
+        409,
+        'conflict',
+        `this build is ${check.status} of ${check.branch}, so pulling the branch tip would not ` +
+          'fast-forward. Update the checkout by hand.',
+      );
+    }
+    if (check.status === 'unknown') {
+      return sendError(
+        reply,
+        409,
+        'conflict',
+        'the running commit could not be compared with the branch tip, so an update cannot be ' +
+          'shown to be a fast-forward.',
+      );
+    }
+
+    const request = writeRequest({
+      branch: config.updateBranch,
+      by: req.user?.email ?? 'unknown',
+      version: buildInfo.version,
+      commit: buildInfo.commit,
+    });
+    await auditFromRequest(req, 'system.update', 'system', request.id, {
+      branch: request.branch,
+      from: buildInfo.commitShort || null,
+      to: check.latest?.commitShort ?? null,
+      behindBy: check.behindBy,
+    });
+
+    return reply.code(202).send({ requested: true, request, job: readJob() });
   });
 }

@@ -5,6 +5,7 @@ import { usePolling } from '../hooks/usePolling';
 import { useAuth } from '../hooks/useAuth';
 import { CloudflarePanel } from './TunnelsPage';
 import { AllocationDialog } from '../components/AllocationDialog';
+import { UpdateCard } from '../components/UpdateCard';
 import {
   Banner,
   Button,
@@ -162,7 +163,7 @@ export function SettingsPage() {
 
   return (
     <>
-      <PageHead title="Settings" desc="Cloudflare credentials, users and server settings" />
+      <PageHead title="Settings" desc="Version and updates, Cloudflare credentials, users and server settings" />
 
       {error ? (
         <Banner tone="error" title="Settings action failed" onDismiss={() => setError(null)}>
@@ -174,6 +175,8 @@ export function SettingsPage() {
           {notice}
         </Banner>
       ) : null}
+
+      <UpdateCard />
 
       <CloudflarePanel
         status={cf.data}
