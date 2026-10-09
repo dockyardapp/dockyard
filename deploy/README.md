@@ -90,6 +90,21 @@ That creates `data/update/`, gives it to the panel's uid so the container can wr
 it, installs `dockyard-updater.service` and `dockyard-updater.path`, and writes the marker file the
 panel reads to decide whether **Install update** can work. Re-running it is safe.
 
+The updater works by pulling the deployed directory, so that directory has to be a **git checkout
+with an `origin` remote**. A directory that was copied onto the host instead of cloned has nothing
+to pull, so `install-updater.sh` checks for this and stops rather than installing a button that
+cannot work. Give it a `.git` directory first:
+
+```bash
+git clone <repository> /tmp/dockyard-clone
+mv /tmp/dockyard-clone/.git /opt/dockyard/.git
+cd /opt/dockyard && git checkout -B main origin/main
+```
+
+A private repository also needs the host to authenticate the fetch, for **root**, because the path
+unit runs as root: a deploy key via `GIT_SSH_COMMAND`, or a credential helper. The panel's own
+`DOCKYARD_UPDATE_TOKEN` is only for the update *check*, which runs in the container.
+
 From then on, pressing **Install update** on the panel's Settings page writes
 `data/update/request.json`, the path unit fires, and `deploy/update.sh` runs:
 

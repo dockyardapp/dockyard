@@ -221,6 +221,10 @@ sudo ./deploy/install-updater.sh     # once, on the host, to wire up the button
 ./deploy/update.sh                   # or update by hand, any time
 ```
 
+The deployed directory has to be a git checkout with an `origin` remote, because that is what the
+updater pulls. A directory that was copied onto the host instead of cloned has nothing to pull, so
+`install-updater.sh` checks and refuses rather than installing a button that cannot work.
+
 Until the updater is installed the panel says so and leaves **Install update** disabled. A button
 that silently does nothing is worse than a disabled one.
 

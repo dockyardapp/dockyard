@@ -181,6 +181,20 @@ if [ "$RESUME" != "1" ]; then
       ;;
   esac
 
+  # The updater works by pulling this checkout, so a directory that was copied onto the host rather
+  # than cloned cannot be updated. Say that plainly instead of letting git emit a raw error.
+  if ! git -C "$REPO_DIR" rev-parse --git-dir >/dev/null 2>&1; then
+    log "refusing: $REPO_DIR is not a git checkout"
+    write_status failed "fetch" "The deployed directory is not a git checkout, so there is nothing to pull. Clone the repository into it, then run deploy/install-updater.sh again." "" ""
+    exit 5
+  fi
+
+  if ! git -C "$REPO_DIR" remote get-url origin >/dev/null 2>&1; then
+    log "refusing: $REPO_DIR has no origin remote"
+    write_status failed "fetch" "The deployed checkout has no origin remote, so there is nothing to pull. Add one, then try again." "" ""
+    exit 5
+  fi
+
   cd "$REPO_DIR"
 
   if [ "$FORCE" != "1" ] && [ -n "$(git status --porcelain --untracked-files=no)" ]; then

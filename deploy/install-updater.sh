@@ -29,8 +29,24 @@ if [ ! -f "$REPO_DIR/docker-compose.yml" ]; then
   exit 1
 fi
 
+# The updater updates by pulling this directory, so a directory that was copied onto the host
+# instead of cloned has nothing to pull. Catch that here, where there is a person to tell.
+if ! git -C "$REPO_DIR" rev-parse --git-dir >/dev/null 2>&1; then
+  say "$REPO_DIR is not a git checkout, so the updater would have nothing to pull."
+  say "Replace it with a clone, keeping your .env and data/, then re-run this:"
+  say "  git clone <repository> $REPO_DIR.new && mv $REPO_DIR.new/.git $REPO_DIR/.git"
+  exit 1
+fi
+if ! git -C "$REPO_DIR" remote get-url origin >/dev/null 2>&1; then
+  say "$REPO_DIR has no 'origin' remote, so the updater would have nothing to pull."
+  say "  git -C $REPO_DIR remote add origin <repository>"
+  exit 1
+fi
+
 say "checkout:  $REPO_DIR"
 say "spool:     $SPOOL_DIR"
+say "remote:    $(git -C "$REPO_DIR" remote get-url origin)"
+say "branch:    $(git -C "$REPO_DIR" rev-parse --abbrev-ref HEAD)"
 
 mkdir -p "$SPOOL_DIR"
 if id -u "$PANEL_UID" >/dev/null 2>&1 || getent passwd "$PANEL_UID" >/dev/null 2>&1; then
