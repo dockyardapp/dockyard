@@ -1,3 +1,5 @@
+import { readFileSync } from 'node:fs';
+
 import { expect, test } from '@playwright/test';
 import type { Page } from '@playwright/test';
 import {
@@ -333,7 +335,10 @@ test('the running version is visible in the chrome and detailed on settings', as
   // The card names the build, its commit and where it came from. The upstream check may fail on a
   // host with no route to GitHub, so the assertions stop at what the panel knows locally.
   const card = page.locator('.card', { has: page.getByRole('heading', { name: 'Version' }) });
-  await expect(card).toContainText('v0.2.0');
+  // Read the version from package.json rather than hardcoding it: a release bump should not break
+  // the suite, and a stale hardcoded value would pass while the panel reported the wrong build.
+  const pkg = JSON.parse(readFileSync(new URL('../../package.json', import.meta.url), 'utf8'));
+  await expect(card).toContainText(`v${pkg.version}`);
   await expect(card).toContainText('EliasL-git/dockyard');
   await expect(card.getByRole('button', { name: 'Check for updates' })).toBeEnabled();
 });

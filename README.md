@@ -205,7 +205,7 @@ logged.
 
 ## Version and updates
 
-The panel shows the build it is running in the top bar of every page (`v0.2.0 · 225b0b5`), and the
+The panel shows the build it is running in the top bar of every page (`v0.2.1 · 01638e1`), and the
 full detail on **Settings**: version, commit, build time, source repository and branch. The badge
 links there.
 

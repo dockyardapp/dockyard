@@ -121,6 +121,22 @@ panel's update card renders. Watch a run with `systemctl status dockyard-updater
 No systemd on the host? `install-updater.sh` says so and leaves you a cron line instead. The
 updater is also fine to run by hand at any time, with no panel involved.
 
+## What the updater was verified against
+
+Run against a real git remote with `docker` stubbed (33 assertions): the fast-forward guard, the
+dirty-checkout refusal, the request handshake, the `--force` escape, and a **real rollback** where
+the new build never answered its health endpoint and the previous commit was rebuilt and restarted.
+A branch name from the request file that tries to reach a shell word is refused before it can.
+
+Then on the deployment itself:
+
+- the path unit fires when `request.json` appears, and `update.sh` runs to completion
+- the fetch authenticates with a **read-only deploy key** on the host (not the panel's token), so a
+  private repository updates without a credential in the panel
+- the no-op path reports `success` / "Already at the tip" and writes `status.json` the card renders
+- a real update pulls, rebuilds with the commit stamped in, restarts, and the panel reports the new
+  version in `/api/system/info` and in the top bar
+
 ## What was verified
 
 The config in this directory was run for real against a production-mode instance

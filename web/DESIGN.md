@@ -277,7 +277,7 @@ signals element size rather than adding decoration.
   rhythm tightens (group-label and item padding) so all ten entries fit without a scrollbar, and below
   620px it tightens again; under that the list scrolls, and the footer stays visible.
 - **stat-value:** the large tabular number in a dashboard tile.
-- **version-badge:** the running build, in the top bar of every page. Monospace `v0.2.0 · 225b0b5`,
+- **version-badge:** the running build, in the top bar of every page. Monospace `v0.2.1 · 01638e1`,
   because it is an identifier an operator reads back over the phone rather than prose. It is a link
   to Settings, where the full card lives, and it carries `has-update` (accent-hover text plus a
   violet dot) when the build is behind its branch. It draws from the same payload the update card
