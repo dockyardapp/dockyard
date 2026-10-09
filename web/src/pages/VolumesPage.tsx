@@ -178,7 +178,9 @@ export function VolumesPage() {
               <tbody>
                 {capped.visible.map((v) => (
                   <tr key={v.name}>
-                    <td className="primary mono-cell" data-label="Name">{v.name}</td>
+                    <td className="primary mono-cell" data-label="Name">
+                      <span className="truncate" title={v.name}>{v.name}</span>
+                    </td>
                     <td data-label="Driver">{v.driver}</td>
                     <td className="mono-cell" data-label="Mountpoint">
                       <span className="truncate" title={v.mountpoint}>{v.mountpoint}</span>

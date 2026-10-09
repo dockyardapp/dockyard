@@ -97,7 +97,10 @@ textarea:focus-visible {
   position: sticky;
   top: 0;
   height: 100vh;
-  overflow-y: auto;
+  /* The brand and the account block stay put and only the nav list scrolls. With the
+     whole sidebar scrolling, a short window pushed the account row off the bottom and
+     put a scrollbar down the nav, which reads as a broken sidebar rather than a long one. */
+  overflow: hidden;
 }
 
 .brand {
@@ -136,6 +139,10 @@ textarea:focus-visible {
   flex-direction: column;
   gap: 1px;
   flex: 1 1 auto;
+  /* Without min-height:0 a flex child refuses to shrink below its content, so the nav
+     would push the footer out instead of scrolling inside its own space. */
+  min-height: 0;
+  overflow-y: auto;
 }
 .nav-group-label {
   padding: var(--space-4) var(--space-3) var(--space-1);
@@ -430,6 +437,12 @@ table.data td {
   border-bottom: 1px solid var(--border-subtle);
   color: var(--text-secondary);
   vertical-align: middle;
+  /* A long unbreakable value (a 64-char volume id, a UUID, an email) sets the column's
+     min-content width, which pushes the whole table past its container and forces the
+     operator to scroll sideways to read the last columns. `anywhere` is what lowers that
+     min-content width; `break-word` does not, so it would not fix this. Ordinary prose
+     still breaks at spaces, and cells that opt into `.truncate` keep their ellipsis. */
+  overflow-wrap: anywhere;
 }
 table.data tbody tr:hover { background: var(--bg-card); }
 table.data td.num, table.data th.num { text-align: right; font-variant-numeric: tabular-nums; }
@@ -873,6 +886,21 @@ table.data .primary { color: var(--text-primary); font-weight: var(--fw-ui); }
   table.data .cell-actions { justify-content: flex-start; flex-wrap: wrap; }
   .page-head .page-actions { margin-left: 0; width: 100%; }
   .stat-value { font-size: var(--fs-h3); }
+}
+
+/* A short window (a laptop with a lot of browser chrome, or one resized short) cannot fit
+   the full nav list at the normal rhythm, and the last items clip. Tighten the vertical
+   spacing when there is not enough height, rather than hiding entries. The footer stays
+   pinned either way, so the account block never scrolls out of reach. */
+@media (max-height: 720px) {
+  .nav { padding: var(--space-2) var(--space-2); }
+  .nav-group-label { padding: var(--space-2) var(--space-3) var(--space-1); }
+  .nav-item { padding-top: 6px; padding-bottom: 6px; }
+}
+
+@media (max-height: 620px) {
+  .nav-group-label { padding-top: var(--space-1); }
+  .nav-item { padding-top: 5px; padding-bottom: 5px; }
 }
 
 @media (prefers-reduced-motion: reduce) {

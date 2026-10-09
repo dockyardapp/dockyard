@@ -123,8 +123,13 @@ export function AuditPage() {
                     <td data-label="User">{e.user_email ?? <span className="dim">system</span>}</td>
                     <td className="mono-cell" data-label="Action">{e.action}</td>
                     <td className="mono-cell" data-label="Target">
-                      {e.target_type}
-                      {e.target_id ? <span className="dim">:{e.target_id}</span> : null}
+                      <span
+                        className="truncate"
+                        title={`${e.target_type}${e.target_id ? `:${e.target_id}` : ''}`}
+                      >
+                        {e.target_type}
+                        {e.target_id ? <span className="dim">:{e.target_id}</span> : null}
+                      </span>
                     </td>
                     <td className="mono-cell dim" data-label="IP">{e.ip ?? '-'}</td>
                     <td className="cell-actions" data-label="Detail">

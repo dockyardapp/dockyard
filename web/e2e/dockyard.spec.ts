@@ -317,3 +317,66 @@ test('the create-tunnel dialog offers localtunnel, which needs no Cloudflare acc
 
   await expect(dialog.getByRole('button', { name: 'Create tunnel' })).toBeEnabled();
 });
+
+test('no table hides its columns behind a sideways scroll', async ({ page }) => {
+  await login(page, admin.email, admin.password);
+
+  // A long unbreakable value in a cell (a 64-char volume id, a UUID, an email) used to set
+  // the column's min-content width and push the table past its container, so the last
+  // columns were clipped and the operator had to scroll sideways to read them.
+  const ROUTES_WITH_TABLES = ['/', '/volumes', '/audit', '/images', '/networks', '/settings'];
+
+  for (const route of ROUTES_WITH_TABLES) {
+    await page.goto(route);
+
+    const overflow = await page.evaluate(() =>
+      [...document.querySelectorAll('.table-wrap')].map((w) => w.scrollWidth - w.clientWidth).filter((d) => d > 1),
+    );
+    expect(overflow, `${route} hides table columns behind a scroll`).toEqual([]);
+
+    // And no cell's content is wider than the table itself.
+    const cellsPastTable = await page.evaluate(() =>
+      [...document.querySelectorAll('table.data')].flatMap((t) => {
+        const right = t.getBoundingClientRect().right;
+        return [...t.querySelectorAll('td')]
+          .filter((td) => td.getBoundingClientRect().right > right + 1)
+          .map((td) => (td.textContent ?? '').trim().slice(0, 30));
+      }),
+    );
+    expect(cellsPastTable, `${route} has cells past the table edge`).toEqual([]);
+  }
+});
+
+test('the sidebar keeps every entry and the account block on a short window', async ({ page }) => {
+  // 600px is a laptop with browser chrome, or a resized window. The whole sidebar used to
+  // scroll, which pushed the account block off the bottom and sliced the last nav entries.
+  await page.setViewportSize({ width: 1280, height: 600 });
+  await login(page, admin.email, admin.password);
+  await page.goto('/containers');
+  // Fail with a clear message if the shell is not up (a login failure would otherwise show
+  // up as a null-property TypeError from the measurement below).
+  await expect(page.locator('.sidebar')).toBeVisible();
+
+  const fit = await page.evaluate(() => {
+    const nav = document.querySelector('.nav')!;
+    const items = [...document.querySelectorAll('.nav-item')];
+    const last = items[items.length - 1].getBoundingClientRect();
+    const navBox = nav.getBoundingClientRect();
+    const foot = document.querySelector('.sidebar-foot')!.getBoundingClientRect();
+    return {
+      navScrolls: nav.scrollHeight > nav.clientHeight + 1,
+      lastItemBottom: Math.round(last.bottom),
+      navBottom: Math.round(navBox.bottom),
+      footVisible: foot.bottom <= window.innerHeight + 1 && foot.top >= 0,
+      entries: items.map((i) => (i.textContent ?? '').trim()),
+    };
+  });
+
+  expect(fit.entries).toContain('Settings');
+  expect(fit.navScrolls, 'the nav list needs scrolling at 600px').toBe(false);
+  expect(fit.lastItemBottom, 'the last nav entry is clipped').toBeLessThanOrEqual(fit.navBottom + 1);
+  expect(fit.footVisible, 'the account block is off screen').toBe(true);
+
+  await expect(page.getByRole('link', { name: 'Settings' })).toBeVisible();
+  await expect(page.getByText(admin.email)).toBeVisible();
+});

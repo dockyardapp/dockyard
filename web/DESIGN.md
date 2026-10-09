@@ -261,13 +261,21 @@ signals element size rather than adding decoration.
 - **input:** panel-coloured field with a `border-standard` border that turns accent violet on focus.
 - **card:** surface background, a `border-subtle` border, 8px radius. The container for every table and
   form group.
-- **table:** dense rows divided by `border-subtle` hairlines, header text in `text-tertiary`.
+- **table:** dense rows divided by `border-subtle` hairlines, header text in `text-tertiary`. Cells
+  carry `overflow-wrap: anywhere`, which is what stops a single long unbreakable value (a 64-char
+  volume id, a UUID, an email) from setting the column's min-content width and pushing the table
+  past its container. `break-word` would not do this: only `anywhere` lowers the min-content width.
+  Values that are identifiers rather than prose still opt into `.truncate` with a `title`, so a row
+  stays one line instead of wrapping a hash across three.
 - **dim / muted:** the two quiet text tiers. `dim` is `text-quaternary`, `muted` is `text-tertiary`;
   both stay at or above 4.5:1 on every surface they appear on.
 - **raised-control:** a control sitting on the raised surface uses the solid `border-solid` hairline,
   because a translucent border disappears against a lighter background.
 - **nav-item / nav-item-active:** sidebar entries. The active one gets an accent-tinted background
-  and brighter text.
+  and brighter text. Only the nav list scrolls: the brand and the account block are pinned, so a short
+  window cannot push the account row off the bottom. Below 720px of viewport height the vertical
+  rhythm tightens (group-label and item padding) so all ten entries fit without a scrollbar, and below
+  620px it tightens again; under that the list scrolls, and the footer stays visible.
 - **stat-value:** the large tabular number in a dashboard tile.
 - **code-inline:** monospace on canvas, for ids and ports inside prose.
 - **link / link-hover:** accent violet, brightening to `accent-hover` on hover.
