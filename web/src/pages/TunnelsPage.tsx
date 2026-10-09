@@ -31,7 +31,7 @@ import {
   useConfirm,
 } from '../components/ui';
 import { TunnelModesGuide } from '../components/TunnelModesGuide';
-import { formatDateTime, pluralize } from '../lib/format';
+import { pluralize } from '../lib/format';
 
 type TunnelTab = 'tunnels' | 'how';
 
@@ -643,7 +643,7 @@ function CreateTunnelDrawer({
 
       <p className="dim" style={{ fontSize: 'var(--fs-micro)', marginTop: 'var(--space-3)' }}>
         <Icon name="info" size={12} /> Quick tunnel URLs are read from cloudflared output and can take a few
-        seconds to appear. Created {formatDateTime(new Date())}.
+        seconds to appear.
       </p>
     </Dialog>
   );
