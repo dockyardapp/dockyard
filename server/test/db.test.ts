@@ -9,10 +9,12 @@ import crypto from 'node:crypto';
 import { runMigrations, migrationStatus } from '../src/db/migrate.ts';
 import { pool, query, one, many, tx, closePool, dbHealth } from '../src/db/pool.ts';
 
-const EXPECTED_TABLES = ['users', 'sessions', 'audit_log', 'templates', 'stacks', 'tunnels', 'settings'];
+const EXPECTED_TABLES = [
+  'users', 'sessions', 'audit_log', 'templates', 'stacks', 'tunnels', 'settings', 'user_grants',
+];
 
 const EXPECTED_COLUMNS: Record<string, string[]> = {
-  users: ['id', 'email', 'password_hash', 'role', 'created_at', 'last_login_at'],
+  users: ['id', 'email', 'password_hash', 'role', 'created_at', 'last_login_at', 'scope_mode', 'can_exec'],
   sessions: ['id', 'user_id', 'token_hash', 'user_agent', 'ip', 'created_at', 'expires_at'],
   audit_log: ['id', 'user_id', 'action', 'target_type', 'target_id', 'detail', 'ip', 'created_at'],
   templates: ['id', 'slug', 'name', 'category', 'icon', 'description', 'spec', 'source', 'created_at', 'updated_at'],
@@ -23,16 +25,31 @@ const EXPECTED_COLUMNS: Record<string, string[]> = {
     'created_at', 'updated_at',
   ],
   settings: ['key', 'value', 'secret', 'updated_at'],
+  user_grants: [
+    'id', 'user_id', 'resource_kind', 'resource_id', 'label_key', 'label_value', 'created_by', 'created_at',
+  ],
 };
 
+// The names Postgres actually assigned, read off a live database rather than guessed. Some are load
+// bearing beyond their own definition: the legacy migrations dropped `templates_source_check` and
+// `tunnels_mode_check` *by name*, so a squash that renamed them would silently change behaviour.
 const EXPECTED_CONSTRAINTS = [
-  'users_pkey', 'users_email_key', 'users_role_check',
+  'users_pkey', 'users_email_key', 'users_role_check', 'users_scope_mode_check',
   'sessions_pkey', 'sessions_token_hash_key', 'sessions_user_id_fkey',
-  'audit_log_pkey',
+  'audit_log_pkey', 'audit_log_user_id_fkey',
   'templates_pkey', 'templates_slug_key', 'templates_source_check',
-  'stacks_pkey', 'stacks_status_check',
-  'tunnels_pkey', 'tunnels_mode_check', 'tunnels_status_check',
+  'stacks_pkey', 'stacks_source_check', 'stacks_status_check', 'stacks_created_by_fkey',
+  'tunnels_pkey', 'tunnels_mode_check', 'tunnels_status_check', 'tunnels_created_by_fkey',
   'settings_pkey',
+  'user_grants_pkey', 'user_grants_user_id_fkey', 'user_grants_created_by_fkey',
+  'user_grants_resource_kind_check', 'user_grants_selector', 'user_grants_label_nonempty',
+];
+
+// Indexes are half of what a squashed migration can lose: a table can come back byte-identical while
+// the index that made a hot query cheap is gone, and nothing else in this suite would notice.
+const EXPECTED_INDEXES = [
+  'sessions_user_id_idx', 'sessions_expires_at_idx', 'audit_log_created_at_idx',
+  'templates_source_idx', 'stacks_slug_idx', 'user_grants_user_id_idx', 'user_grants_unique_idx',
 ];
 
 const testEmail = `agent1-${crypto.randomBytes(6).toString('hex')}@dockyard.test`;
@@ -49,24 +66,36 @@ after(async () => {
 
 describe('migrations', () => {
   test('runMigrations applies cleanly and is idempotent', async () => {
+    // Which migrations exist is drizzle-kit's business, so this asserts the contract rather than a
+    // filename: whatever the build ships is applied exactly once and reported as already applied on
+    // every run after that. Hardcoding a tag would only test that nobody renamed a file.
+    const listed = await migrationStatus();
+    const tags = listed.filter((s) => !s.id.startsWith('(not in this build')).map((s) => s.id);
+    assert.ok(tags.length > 0, 'the build must ship at least one migration');
+
     const first = await runMigrations();
-    // Either it applied 001_init now, or a prior run already did.
-    assert.ok(
-      first.applied.includes('001_init') || first.already.includes('001_init'),
-      `expected 001_init in ${JSON.stringify(first)}`,
-    );
+    for (const tag of tags) {
+      assert.ok(
+        first.applied.includes(tag) || first.already.includes(tag),
+        `expected ${tag} in ${JSON.stringify(first)}`,
+      );
+    }
 
     const second = await runMigrations();
     assert.deepEqual(second.applied, [], 'second run must apply nothing');
-    assert.ok(second.already.includes('001_init'), 'second run must report 001_init as already applied');
+    assert.deepEqual(
+      second.already,
+      tags,
+      'second run must report every migration as already applied',
+    );
 
     const status = await migrationStatus();
-    const init = status.find((s) => s.id === '001_init');
-    assert.ok(init, 'migrationStatus must list 001_init');
-    assert.ok(init!.applied_at, '001_init must have an applied_at timestamp');
+    for (const row of status) {
+      assert.ok(row.applied_at, `${row.id} must have an applied_at timestamp`);
+    }
   });
 
-  test('all 7 tables exist', async () => {
+  test('all 8 tables exist', async () => {
     const rows = await many<{ table_name: string }>(
       `select table_name from information_schema.tables
        where table_schema = 'public' and table_type = 'BASE TABLE'`,
@@ -74,8 +103,9 @@ describe('migrations', () => {
     const names = new Set(rows.map((r) => r.table_name));
     for (const t of EXPECTED_TABLES) assert.ok(names.has(t), `missing table ${t}`);
 
-    const migrationsTable = await one(`select to_regclass('public.schema_migrations') as t`);
-    assert.ok(migrationsTable && (migrationsTable as any).t, 'schema_migrations table must exist');
+    // Drizzle keeps its own bookkeeping, in a schema of its own so it cannot collide with the app's.
+    const journalTable = await one(`select to_regclass('drizzle.__drizzle_migrations') as t`);
+    assert.ok(journalTable && (journalTable as any).t, "drizzle's journal table must exist");
   });
 
   test('each table has the contract columns', async () => {
@@ -97,6 +127,14 @@ describe('migrations', () => {
     );
     const names = new Set(rows.map((r) => r.conname));
     for (const c of EXPECTED_CONSTRAINTS) assert.ok(names.has(c), `missing constraint ${c}`);
+  });
+
+  test('the indexes that make the hot queries cheap exist', async () => {
+    const rows = await many<{ indexname: string }>(
+      `select indexname from pg_indexes where schemaname = 'public'`,
+    );
+    const names = new Set(rows.map((r) => r.indexname));
+    for (const i of EXPECTED_INDEXES) assert.ok(names.has(i), `missing index ${i}`);
   });
 
   test('users.role check rejects an invalid role', async () => {

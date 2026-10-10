@@ -39,6 +39,10 @@ COPY --from=deps  /build/node_modules ./node_modules
 COPY --from=deps  /build/package.json ./package.json
 COPY --from=deps  /build/server/package.json ./server/package.json
 COPY server/src ./server/src
+# The generated migrations and Drizzle's journal. `migrate()` reads this directory at boot, so an
+# image without it starts and then dies on the first run; drizzle-kit itself is a dev dependency and
+# deliberately absent here, because generating migrations is a development act, not a runtime one.
+COPY server/drizzle ./server/drizzle
 COPY server/tsconfig.json ./server/tsconfig.json
 COPY --from=web   /build/web/dist ./web/dist
 COPY --from=cloudflared /usr/local/bin/cloudflared /usr/local/bin/cloudflared

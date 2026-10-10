@@ -50,7 +50,7 @@ dockyard/
       index.ts           boot: config → migrate → buildApp → listen
       app.ts             fastify instance + plugin/route registration
       config.ts  logger.ts  events.ts  secrets.ts  stacks.ts
-      db/                pool.ts  migrate.ts  migrations/NNN_*.sql
+      db/                pool.ts  migrate.ts  schema.ts   (Drizzle schema; SQL in server/drizzle/)
       docker/            index.ts containers.ts images.ts volumes.ts networks.ts errors.ts stats.ts
       auth/              password.ts sessions.ts rbac.ts audit.ts
       routes/            auth.ts system.ts containers.ts images.ts volumes.ts networks.ts
@@ -111,9 +111,27 @@ export function redact(obj: unknown): unknown;   // deep-masks keys matching /to
 
 ## 3. Postgres schema — owner: agent 1 (migrations), read-only for everyone else
 
-`server/src/db/migrate.ts` creates `schema_migrations(id text primary key, applied_at timestamptz
-not null default now())` if absent, then applies `migrations/NNN_name.sql` in filename order,
-each inside a transaction. Exports:
+**Drizzle owns the schema.** `server/src/db/schema.ts` is the definition in `drizzle-orm/pg-core`,
+`server/drizzle/` holds the SQL `drizzle-kit generate` produced from it together with Drizzle's
+journal, and `server/src/db/migrate.ts` applies it at boot through Drizzle's migrator. There are no
+hand-written `.sql` migration files any more; the six that predate this were folded into the single
+baseline migration and are in git history.
+
+To change the schema: edit `schema.ts`, then `cd server && npx drizzle-kit generate`, and commit the
+new file under `server/drizzle/`. Never edit an applied migration.
+
+Two properties of the runner are load-bearing, because the migration also runs against databases that
+already have every table:
+
+- **Every statement is idempotent** (`IF NOT EXISTS`, and constraints declared inline in their
+  `CREATE TABLE`). Drizzle's migrator runs any migration it has not recorded, and a database that
+  predates Drizzle has no journal at all, so the first run applies the baseline to a populated schema.
+  Being a no-op there is the expected outcome.
+- **`server/drizzle/` must be in the deployment.** `migrate()` reads the directory at boot; an image
+  without it starts and then dies on the first run. `drizzle-kit` is a dev dependency and is
+  deliberately absent from the runtime image, because generating migrations is a development act.
+
+`server/src/db/migrate.ts` keeps the shape its callers already use. Exports:
 
 ```ts
 export async function runMigrations(): Promise<{ applied: string[]; already: string[] }>;
@@ -121,7 +139,11 @@ export async function migrationStatus(): Promise<Array<{ id: string; applied_at:
 ```
 Runnable as a CLI: `node server/src/db/migrate.ts`.
 
-### `001_init.sql` — exact DDL
+Drizzle records a migration by its `when` stamp, not by name, so `applied` / `already` are computed
+by diffing the journal against `drizzle.__drizzle_migrations` before and after the run. That stamp is
+the join key between the two.
+
+### `0000_init.sql` — exact DDL
 
 ```sql
 create extension if not exists pgcrypto;
@@ -206,7 +228,8 @@ create table if not exists settings (
 );
 ```
 
-Add further migrations only if genuinely needed. Never edit an applied migration.
+Add further migrations only if genuinely needed, and generate them from `schema.ts` rather than
+writing them by hand. Never edit an applied migration.
 
 ---
 
