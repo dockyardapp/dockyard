@@ -392,6 +392,14 @@ tui_footer() {
   printf '\n  %s%s%s\n' "$TUI_DIM" "$1" "$TUI_OFF" >&3
 }
 
+# A prompt can be more than one line. Every line gets the same indent, or a wrapped sentence drifts
+# back to the left margin and reads as a different element from the one it continues.
+tui_para() {
+  printf '%s\n' "$1" | while IFS= read -r line; do
+    printf '  %s\n' "$line" >&3
+  done
+}
+
 # An informational screen. Returns non-zero if the operator backs out.
 tui_message() {
   local title="$1" body="$2" key
@@ -426,7 +434,7 @@ tui_menu() {
   while :; do
     tui_screen
     tui_title "$title"
-    [ -n "$prompt" ] && printf '  %s\n\n' "$prompt" >&3
+    [ -n "$prompt" ] && { tui_para "$prompt"; printf '\n' >&3; }
     for ((i = 0; i < n; i++)); do
       if [ "$i" -eq "$sel" ]; then
         printf '  %s> %s%s\n' "$TUI_REV" "${labels[$i]}" "$TUI_OFF" >&3
@@ -466,7 +474,7 @@ tui_input() {
   while :; do
     tui_screen
     tui_title "$title"
-    [ -n "$prompt" ] && printf '  %s\n\n' "$prompt" >&3
+    [ -n "$prompt" ] && { tui_para "$prompt"; printf '\n' >&3; }
     printf '  %s>%s %s\n' "$TUI_BOLD" "$TUI_OFF" "$(tui_echo "$buf")" >&3
     tui_footer "enter accepts, backspace deletes, ctrl-c quits"
 
