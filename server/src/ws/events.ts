@@ -8,12 +8,15 @@
 
 import type { FastifyInstance } from 'fastify';
 import { bus } from '../events.ts';
-import { SESSION_COOKIE, readSession } from '../auth/sessions.ts';
+import { authenticate } from '../auth/sessions.ts';
+import { eventVisible } from './visibility.ts';
 
 export default async function eventsWs(app: FastifyInstance): Promise<void> {
   app.get('/ws/events', { websocket: true }, async (socket, req) => {
-    const user = await readSession(req.cookies?.[SESSION_COOKIE]);
-    if (!user) {
+    // `authenticate` is what the REST routes use: it resolves the session and
+    // loads `req.scope`, which is the allocation this socket has to honour.
+    await authenticate(req);
+    if (!req.user) {
       try {
         socket.close(4401, 'unauthorized');
       } catch {
@@ -21,6 +24,7 @@ export default async function eventsWs(app: FastifyInstance): Promise<void> {
       }
       return;
     }
+    const scope = req.scope;
 
     const send = (payload: unknown): void => {
       try {
@@ -30,7 +34,12 @@ export default async function eventsWs(app: FastifyInstance): Promise<void> {
       }
     };
 
-    const unsubscribe = bus.on((ev) => send(ev));
+    // A scoped subscriber receives only the events for resources it may see, and
+    // an event that cannot be attributed to a visible resource is withheld. The
+    // filter is synchronous, so the order of the stream is preserved.
+    const unsubscribe = bus.on((ev) => {
+      if (eventVisible(scope, ev)) send(ev);
+    });
 
     socket.on('message', () => {
       /* one-way stream; client messages are ignored */

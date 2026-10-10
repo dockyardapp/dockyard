@@ -255,17 +255,23 @@ Close codes:
 - `4401` unauthenticated (`server/src/ws/logs.ts:22`).
 - `1000` normal: `container gone` or `stream ended` (`server/src/ws/logs.ts:52`, `:78`).
 - `1011` on a Docker or stream error (`server/src/ws/logs.ts:47`, `:62`).
+- `1000` with `{ "type": "end", "reason": "container_gone" }` when the container is outside the
+  caller's allocation, worded identically to a container that does not exist.
 
 The stats stream's interval timer is cleared on close (`server/src/ws/stats.ts:55`). The events
 stream subscribes each authenticated client to the in-process bus and unsubscribes on close
 (`server/src/ws/events.ts:33`).
 
-Scope is NOT applied on the WebSocket routes: `logs`, `stats` and `events` check only that a
-session exists, then serve the requested container or all bus events without a `canSee` check
-(`server/src/ws/logs.ts:43`, `server/src/ws/stats.ts:39`, `server/src/ws/events.ts:33`). A scoped
-user who knows a container id can therefore read its logs and stats over the socket even though
-the REST equivalents 404. This looks like a gap rather than a deliberate choice; flagged for
-review, not asserted as intended.
+**Scope is applied on these routes.** `logs` and `stats` resolve the container and then apply the
+same `canSee` check the container routes apply; a container outside the caller's allocation ends the
+stream with `{ "type": "end", "reason": "container_gone" }` and close code `1000`, exactly as a
+container that does not exist, so ids cannot be enumerated over a socket any more than over a route.
+`/ws/events` filters the bus per subscriber: an event is delivered only when it can be attributed to
+a resource the caller may see (a container event carries `id`, `name` and `labels`; a tunnel event its
+own id and name, or the container it exposes; a stack event its id), and an event that cannot be
+attributed is withheld. An unrestricted subscriber receives every event, unchanged. The filter is
+`server/src/ws/visibility.ts`, shared by the three handlers so they cannot drift from each other or
+from the routes, and `server/test/ws-scope.test.ts` covers it over a real socket.
 
 ## Cross-cutting behaviour
 
