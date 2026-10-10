@@ -87,7 +87,13 @@ ALIASES = {
 }
 
 CARD = (13, 14, 15)  # rgba(255,255,255,0.02) composited over the #08090a canvas
+# Whether a brand colour needs lifting at all: the WCAG bar for non-text content.
 MIN_CONTRAST = 3.0
+# What a lifted mark is lifted *to*. Aiming at the bare minimum left lifted marks sitting at 3.2,
+# visibly weaker than brands that never needed touching (PostgreSQL's own blue is 3.99), and a grey
+# lifted only to 3.2 reads as a smudge on the card. 4.5 is the bar body text has to clear, so a mark
+# we had to alter ends up reading at least as well as one we did not.
+LIFT_TARGET = 4.5
 
 
 def srgb_to_lin(c):
@@ -121,7 +127,7 @@ def readable(brand_hex):
     for _ in range(60):
         mid = (lo + hi) / 2
         candidate = tuple(round(c * 255) for c in colorsys.hls_to_rgb(h, mid, s))
-        if contrast(candidate, CARD) >= MIN_CONTRAST + 0.2:
+        if contrast(candidate, CARD) >= LIFT_TARGET + 0.2:
             hi = mid
         else:
             lo = mid
@@ -156,7 +162,7 @@ lines.append("// owners and identify the software the template deploys.")
 lines.append("//")
 lines.append("// `fill` is the brand colour, except where that colour does not read on the")
 lines.append("// app's dark card (rgba(255,255,255,0.02) over #08090a). Those are lifted")
-lines.append("// within their own hue until they clear 3:1, and marked `adjusted: true`.")
+lines.append("// within their own hue until they clear 4.5:1, and marked `adjusted: true`.")
 lines.append("")
 lines.append("export type TemplateLogo = {")
 lines.append("  /** Human name of the product the mark belongs to. */")
@@ -188,7 +194,7 @@ for si_slug, tpl_slug, title, view_box, path, aspect in entries:
     fill, adjusted = readable(brand)
     if adjusted:
         lines.append(
-            f"  // {brand} is {contrast(hex_rgb(brand), CARD):.2f}:1 on the card; lifted to clear 3:1"
+            f"  // {brand} is {contrast(hex_rgb(brand), CARD):.2f}:1 on the card; lifted to clear 4.5:1"
         )
     lines.append(f"  {si_slug}: {{")
     lines.append(f"    title: {json.dumps(title)},")

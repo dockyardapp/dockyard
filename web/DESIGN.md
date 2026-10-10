@@ -319,10 +319,13 @@ signals element size rather than adding decoration.
     abstract to begin with (Uptime Kuma's ring, MinIO's swoosh, Traefik's interlocking lines); that
     is the mark, not a rendering fault.
   A mark whose brand colour falls below 3:1 on the card is lifted within its own hue until it clears
-  (Adminer `#34567C` to `#3d6692`, MariaDB `#003545` to `#006b8c`, Vaultwarden `#000000` to
-  `#636363`) and flagged `adjusted` in `templateLogos.ts`. A product with no mark falls back to the
-  template's own `icon`, which names a glyph in the app's own set, and the mark is `aria-hidden`
-  because the name beside it already says which product it is.
+  4.5:1 (Adminer `#34567C` to `#5180b6`, MariaDB `#003545` to `#0088b0`, Vaultwarden `#000000` to
+  `#7e7e7e`) and flagged `adjusted` in `templateLogos.ts`. The target is the bar body text has to
+  clear rather than the 3:1 floor for non-text content: aiming at the floor left lifted marks at
+  3.2, visibly weaker than brands that never needed touching (PostgreSQL's own blue is 3.99), and a
+  grey lifted only to 3.2 reads as a smudge. A product with no mark falls back to the template's own
+  `icon`, which names a glyph in the app's own set, and the mark is `aria-hidden` because the name
+  beside it already says which product it is.
 - **tunnel-guide:** the reference tab on the Tunnels page, beside the list. It explains what a tunnel
   does, compares the three exposure modes and says which to reach for. Reference material is the
   easiest place to import furniture from somewhere else, so it uses only what the page already owns:
