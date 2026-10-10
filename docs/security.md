@@ -233,16 +233,17 @@ Caveats, stated plainly:
   `README.md` and is why the label form exists.
 - Clearing every grant leaves the user with nothing visible; flipping back to `all` is a
   separate, explicit change (`users.ts:279-287`).
-- **The WebSocket routes do not apply the scope filter.** `/ws/containers/:id/logs`
+- **The WebSocket routes apply the scope filter.** `/ws/containers/:id/logs`
   (`server/src/ws/logs.ts`) and `/ws/containers/:id/stats` (`server/src/ws/stats.ts`)
-  authenticate via the session cookie and reject an anonymous upgrade with close code
-  `4401`, but they resolve the container by id/name and stream it without a `canSee`
-  check. `/ws/events` (`server/src/ws/events.ts`) subscribes any authenticated client to
-  the global in-process event bus, which carries every container, tunnel and stack event,
-  with no per-user filtering. So a `granted`-scoped user can still read the logs and live
-  stats of a container they cannot see over REST, and sees the event stream for the whole
-  host. REST scoping is the enforced surface; the streaming surface is not yet covered by
-  it.
+  authenticate via the session cookie, reject an anonymous upgrade with close code `4401`, resolve the
+  container, and then apply the same `canSee` check the container routes apply. A container outside
+  the caller's allocation ends the stream with `{"type":"end","reason":"container_gone"}` and close
+  code `1000`, worded exactly like a container that does not exist, so ids cannot be enumerated over a
+  socket any more than over a route. `/ws/events` (`server/src/ws/events.ts`) filters the global bus
+  per subscriber: an event is delivered only when it can be attributed to a resource the caller may
+  see, and an event that cannot be attributed is withheld rather than guessed at. The filter is
+  `server/src/ws/visibility.ts`, shared by the three handlers, and `server/test/ws-scope.test.ts`
+  covers the filter and the handlers over a real socket.
 
 ## The `can_exec` flag
 
@@ -382,8 +383,8 @@ To be concrete about the boundary:
 - Once a user is authenticated at `operator` or `admin`, they are host root. The role
   ladder limits reads for `viewer`, and separates exec from other operator actions, but it
   does not sandbox an operator.
-- The WebSocket streaming surface (logs, stats, events) enforces authentication but not
-  resource scoping, unlike the REST surface.
+- The WebSocket streaming surface (logs, stats, events) enforces the same resource scoping as the
+  REST surface.
 - The per-IP login limit and the recorded audit IP depend on `X-Forwarded-For` being set
   by a trusted proxy, not by the client.
 - Plain-HTTP deployments send the session cookie in the clear; `NODE_ENV=development` is

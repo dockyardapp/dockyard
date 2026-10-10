@@ -529,6 +529,18 @@ caller is not authenticated. `mode` is `'demo'` when the Docker engine is unreac
 `@fastify/websocket`. Auth = the same session cookie on the upgrade request. Unauthenticated
 upgrade → close code `4401`. All frames are JSON text.
 
+**Allocation is enforced on every socket, exactly as it is on the routes.** A socket carries only the
+resources its session may see:
+
+- `/ws/containers/:id/logs` and `/ws/containers/:id/stats` resolve the container and then apply the
+  same check the container routes apply. A container outside the caller's allocation ends with
+  `{"type":"end","reason":"container_gone"}` and close code `1000` — worded exactly like a container
+  that does not exist, so ids cannot be enumerated over a socket any more than over a route.
+- `/ws/events` delivers an event only when it can be attributed to a resource the caller may see: a
+  container event carries `id`, `name` and `labels`; a tunnel event its own id and name, or the
+  container it exposes; a stack event its id. An event that cannot be attributed is withheld.
+  Unrestricted subscribers receive every event, unchanged.
+
 | Path | Server → client | Client → server |
 |---|---|---|
 | `/ws/containers/:id/logs?tail=200` | `{"type":"log","line":"..."}` then `{"type":"end","reason":"stream_ended"\|"container_gone"\|"error"}` | `{"type":"ping"}` |

@@ -9,15 +9,18 @@
 
 import type { FastifyInstance } from 'fastify';
 import { containerLogsStream, resolveContainer } from '../docker/index.ts';
-import { SESSION_COOKIE, readSession } from '../auth/sessions.ts';
+import { authenticate } from '../auth/sessions.ts';
+import { canSeeContainer } from './visibility.ts';
 import { logger } from '../logger.ts';
 
 type EndReason = 'stream_ended' | 'container_gone' | 'error';
 
 export default async function logsWs(app: FastifyInstance): Promise<void> {
   app.get('/ws/containers/:id/logs', { websocket: true }, async (socket, req) => {
-    const user = await readSession(req.cookies?.[SESSION_COOKIE]);
-    if (!user) {
+    // `authenticate` is what the REST routes use: it resolves the session and
+    // loads `req.scope`, which is the allocation this socket has to honour.
+    await authenticate(req);
+    if (!req.user) {
       try {
         socket.close(4401, 'unauthorized');
       } catch {
@@ -25,6 +28,7 @@ export default async function logsWs(app: FastifyInstance): Promise<void> {
       }
       return;
     }
+    const scope = req.scope;
 
     const idOrName = String((req.params as { id?: string })?.id ?? '');
     const tailRaw = Number((req.query as { tail?: string })?.tail);
@@ -48,6 +52,16 @@ export default async function logsWs(app: FastifyInstance): Promise<void> {
       return;
     }
     if (!summary) {
+      send({ type: 'end', reason: 'container_gone' satisfies EndReason });
+      socket.close(1000, 'container gone');
+      return;
+    }
+
+    // A container outside the caller's allocation is refused exactly like one
+    // that does not exist, so a scoped user cannot enumerate the host by probing
+    // ids over a socket any more than over the REST route, which 404s.
+    if (!canSeeContainer(scope, summary)) {
+      logger.debug('ws logs: container outside the caller scope', { id: summary.id });
       send({ type: 'end', reason: 'container_gone' satisfies EndReason });
       socket.close(1000, 'container gone');
       return;

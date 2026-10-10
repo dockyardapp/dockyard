@@ -138,7 +138,16 @@ export default async function containersRoutes(app: FastifyInstance): Promise<vo
       image: input.image,
       ...(inherited ? { allocatedBy: inherited } : {}),
     });
-    bus.emit({ type: 'container', action: 'create', data: { id: created.id, name: created.name, image: input.image } });
+    // `labels` is here for the event stream's scope filter: a container grant may
+    // name a label rather than an id, and without them a label-scoped subscriber
+    // could not be told which events are theirs. It is the same field the
+    // container routes already hand to `canSee`. `createContainer` returns only
+    // the id and name, so this is the set the container was created with.
+    bus.emit({
+      type: 'container',
+      action: 'create',
+      data: { id: created.id, name: created.name, image: input.image, labels: input.labels },
+    });
     return reply.code(201).send({ id: created.id, name: created.name });
   });
 
@@ -189,7 +198,11 @@ export default async function containersRoutes(app: FastifyInstance): Promise<vo
     }
 
     await auditFromRequest(req, `container.${action}`, 'container', summary.id, { name: summary.name });
-    bus.emit({ type: 'container', action, data: { id: summary.id, name: summary.name } });
+    bus.emit({
+      type: 'container',
+      action,
+      data: { id: summary.id, name: summary.name, labels: summary.labels },
+    });
     return reply.code(200).send(await getContainer(summary.id));
   });
 
@@ -206,7 +219,11 @@ export default async function containersRoutes(app: FastifyInstance): Promise<vo
       force: opts.force,
       volumes: opts.volumes,
     });
-    bus.emit({ type: 'container', action: 'remove', data: { id: summary.id, name: summary.name } });
+    bus.emit({
+      type: 'container',
+      action: 'remove',
+      data: { id: summary.id, name: summary.name, labels: summary.labels },
+    });
     return reply.code(200).send({ ok: true });
   });
 
