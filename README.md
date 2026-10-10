@@ -14,7 +14,17 @@ Postgres.
   - *persistent* (named) — a real named tunnel with its own credentials, config file and DNS
     route, restarted automatically when the panel boots
 
-![Dockyard](docs/preview.png)
+![The Dockyard sign-in page](docs/preview.png)
+
+## Documentation
+
+- [Installation](docs/installation.md): the interactive setup, every flag, and the deployment modes.
+- [Configuration](docs/configuration.md): every environment variable, with defaults.
+- [Architecture](docs/architecture.md): how the panel is put together.
+- [API](docs/api.md): the HTTP and WebSocket interface, by resource.
+- [Security](docs/security.md): the threat model and the controls.
+- [Troubleshooting](docs/troubleshooting.md): the failure modes worth knowing.
+- [CONTRACT.md](CONTRACT.md): the frozen interface specification the project was built against.
 
 ## Quick start (local)
 
@@ -54,12 +64,16 @@ useful flags are `--dir`, `--port`, `--bind`, `--public-url`, `--email`, `--pass
 `--no-updater`, `--proxy`, `--cert`, `--domain`, `--http-port`, `--https-port` and `--dry-run`;
 `--help` lists them all with the reasoning.
 
-Run it with no flags on a terminal and it asks the questions it cannot answer for you, as a menu: how
-the panel should be reached, whether nginx terminates TLS, what certificate to use, which address to
-listen on, and who the first account is. It ends on a summary and waits for confirmation before it
-writes anything. Passing any of `--proxy`, `--cert`, `--domain`, `--bind` or `--email` counts as
-having answered, and piped into bash with no terminal it uses the defaults, so `curl | bash` still
-installs unattended.
+On a terminal it asks the questions it cannot answer for you, as a menu: how the panel should be
+reached, whether nginx terminates TLS, what certificate to use, which name it is issued for, which
+address to listen on, which ports, and who the first account is. It ends on a summary and waits for
+confirmation before it writes anything.
+
+Flags do not skip those questions, they pre-fill them: `--proxy` opens the reach question on nginx,
+`--cert letsencrypt` opens the certificate question on Let's Encrypt, and so on, so every decision is
+still shown before anything is written. `--no-tui` is what makes a run unattended, taking the flags
+and the defaults as given. A piped install with no terminal is unattended anyway, so `curl | bash`
+still works with no prompts.
 
 Two decisions in it are worth knowing about, because both are about the panel's blast radius:
 
@@ -79,12 +93,29 @@ interface: the panel moves to `127.0.0.1:8000` and nginx becomes the only public
 sudo ./install.sh --proxy --cert self-signed --domain dockyard.example.com
 ```
 
-`--cert self-signed` works immediately and needs no domain. The browser warns once until you accept
-the certificate, which is the whole of the tradeoff. `--cert letsencrypt` gets a certificate every
-browser trusts, but the domain has to already resolve to the host and port 80 has to be reachable
-from the internet, because that is how the certificate authority confirms you own it. `--cert none`
-serves plain HTTP behind nginx, for a host where something else terminates TLS or that is only
-reached over a tunnel.
+`--cert self-signed` works immediately and needs no domain: with no `--domain` the certificate is
+issued for the host's own detected address, and a browser matches an IP in the same way it matches a
+name. The browser warns once until you accept it, which is the whole of the tradeoff.
+
+`--cert letsencrypt` gets a certificate every browser trusts, and it is the one mode that needs
+preparation. It asks for a name you control and tells you the record to create:
+
+```
+type: A      name: <the name>      value: <this host's address>
+```
+
+Create that at your DNS provider, let it propagate, and make sure port 80 is reachable from the
+internet, because that is how the certificate authority confirms you own the name. The contact
+address passed as `--email` has to be one the authority will accept: reserved domains such as
+`.local` are refused and no account can be registered, so the installer checks this up front rather
+than failing later.
+
+If issuance does fail, the installer falls back to a self-signed certificate for the same name rather
+than leaving the panel on plain HTTP. That keeps TLS, the session cookie and the panel's own links
+consistent, and you replace it by re-running once DNS is right.
+
+`--cert none` serves plain HTTP behind nginx, for a host where something else terminates TLS or that
+is only reached over a tunnel.
 
 The certificate and the rendered nginx config live in `data/nginx/`, which is neither committed nor
 baked into the image. Re-running the installer is safe: `deploy/nginx/gen-cert.sh` leaves an existing,
@@ -384,7 +415,7 @@ logged.
 
 ## Version and updates
 
-The panel shows the build it is running in the top bar of every page (`v0.2.1 · 01638e1`), and the
+The panel shows the build it is running in the top bar of every page (`v0.9.0 · 6da8c09`), and the
 full detail on **Settings**: version, commit, build time, source repository and branch. The badge
 links there.
 
@@ -427,7 +458,6 @@ passes. A build made without it reports the commit as unknown rather than claimi
 ## Tests
 
 ```bash
-export PATH=/root/.hermes/node/bin:$PATH
 npm test                               # server: migrations, docker, api, tunnels, templates, scope
 npm --workspace web run typecheck
 npm --workspace web run test           # component and page tests (vitest)
