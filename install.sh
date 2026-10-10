@@ -524,10 +524,14 @@ fi
 # The template directory is read-only for the panel, but the update spool is written by uid 1001.
 run mkdir -p "$INSTALL_DIR/data/templates" "$INSTALL_DIR/data/update"
 if [ "$DRY_RUN" = "no" ]; then
-  if getent passwd 1001 >/dev/null 2>&1; then
-    chown 1001:1001 "$INSTALL_DIR/data/update" 2>/dev/null || true
-  else
-    # No such local user: the uid only exists inside the image, so fall back to group write.
+  # The panel writes the update spool as uid 1001 inside its container, so the directory has to be
+  # owned by that uid. A numeric chown works whether or not the host has such a user, and it is the
+  # case that matters: a bind-mount source directory Docker creates is owned by root, which the panel
+  # cannot write, and the update button then fails with an opaque EACCES.
+  if ! chown 1001:1001 "$INSTALL_DIR/data/update" 2>/dev/null; then
+    # Only reachable without root. World-writable is worse than it looks here: the host-side updater,
+    # which runs as root, trusts what it finds in this directory.
+    warn "could not set the owner of data/update to the panel's uid; making it writable instead"
     chmod 0777 "$INSTALL_DIR/data/update"
   fi
   chmod 0755 "$INSTALL_DIR/deploy/update.sh" 2>/dev/null || true

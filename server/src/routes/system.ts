@@ -343,12 +343,32 @@ export default async function systemRoutes(app: FastifyInstance): Promise<void> 
       );
     }
 
-    const request = writeRequest({
-      branch: config.updateBranch,
-      by: req.user?.email ?? 'unknown',
-      version: buildInfo.version,
-      commit: buildInfo.commit,
-    });
+    let request;
+    try {
+      request = writeRequest({
+        branch: config.updateBranch,
+        by: req.user?.email ?? 'unknown',
+        version: buildInfo.version,
+        commit: buildInfo.commit,
+      });
+    } catch (err) {
+      // The spool is a bind mount, so its ownership is a property of the host, not of the panel.
+      // Without this the operator sees an opaque 500 and no way to tell what to fix. Note the app
+      // logger takes the message first: Fastify is built with `logger: false`, so `req.log` is a
+      // no-op here and anything logged through it disappears.
+      logger.error('could not write the update request', {
+        spoolDir: config.updateSpoolDir,
+        error: err instanceof Error ? err.message : String(err),
+      });
+      return sendError(
+        reply,
+        503,
+        'unavailable',
+        `the panel could not write an update request to ${config.updateSpoolDir}. That directory ` +
+          'must be writable by the panel, which runs as uid 1001 inside its container; a bind mount ' +
+          'is created owned by root. Run deploy/update.sh once on the host, or install.sh, to fix it.',
+      );
+    }
     await auditFromRequest(req, 'system.update', 'system', request.id, {
       branch: request.branch,
       from: buildInfo.commitShort || null,

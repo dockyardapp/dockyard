@@ -165,7 +165,17 @@ rollback() {
 
 # --------------------------------------------------------------------------- main
 
-mkdir -p "$SPOOL_DIR"
+# The panel writes request.json into the spool and runs as uid 1001 inside its container. Docker
+# creates a bind-mount source directory owned by root, which the panel cannot write, so the update
+# button fails with EACCES and the panel has no way to repair itself. install.sh does this at install
+# time; doing it here as well heals a deployment that predates install.sh, on its next run.
+ensure_spool_owner() {
+  mkdir -p "$SPOOL_DIR"
+  [ "$(id -u)" = "0" ] || return 0
+  chown "${DOCKYARD_PANEL_UID:-1001}:${DOCKYARD_PANEL_UID:-1001}" "$SPOOL_DIR" 2>/dev/null || true
+}
+
+ensure_spool_owner
 # A resume is the same run continuing after the checkout moved, so it must not wait on itself.
 if [ "$RESUME" != "1" ] && command -v flock >/dev/null 2>&1; then
   exec 9>"$LOCK_FILE"
