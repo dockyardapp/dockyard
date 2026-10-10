@@ -32,7 +32,39 @@ Frontend development runs Vite on `:5190` and proxies `/api` and `/ws` to `:8000
 npm --workspace web run dev
 ```
 
+## Install on a server
+
+One script takes a fresh Linux host to a running panel. It installs Docker Engine with the Compose
+plugin, git, curl and openssl, generates the secrets, writes `.env`, builds the images, starts the
+panel and waits until the API answers before it reports success.
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/dockyardapp/dockyard/main/install.sh | sudo bash
+```
+
+Or from a checkout you already have, which installs in place so the updater has a clone to pull:
+
+```bash
+sudo ./install.sh
+```
+
+It supports `apt`, `dnf`, `yum` and `zypper`, and is safe to re-run: an existing checkout is reused,
+an existing `.env` is never rewritten, and the image is rebuilt from whatever the checkout holds. The
+useful flags are `--dir`, `--port`, `--bind`, `--public-url`, `--email`, `--password`, `--no-admin`,
+`--no-updater` and `--dry-run`; `--help` lists them all with the reasoning.
+
+Two decisions in it are worth knowing about, because both are about the panel's blast radius:
+
+- **It generates an admin password by default**, and prints it once. The panel mounts the Docker
+  socket, so anyone who can sign in has root-equivalent control of the host, and while the users table
+  is empty the bootstrap route is open. An install published on a public address with no account set
+  is a race that whoever finds the port first wins. `--no-admin` takes that race deliberately.
+- **It publishes on `0.0.0.0` by default**, and warns about it. `--bind 127.0.0.1` keeps the panel on
+  the host, which is what you want when a tunnel or a reverse proxy is the only intended way in.
+
 ## Quick start (Docker Compose)
+
+The same thing by hand, if you would rather see each step:
 
 ```bash
 export POSTGRES_PASSWORD="$(openssl rand -hex 16)"
@@ -43,9 +75,11 @@ export DOCKER_GID="$(getent group docker | cut -d: -f3)"
 docker compose up -d --build
 ```
 
-`PANEL_PORT` chooses the host-side port (default 8000). The panel itself always listens on 8000;
-the only deployment that differs is one behind a tunnel, which publishes it on **80** instead.
-`PUBLIC_URL` should match whatever you publish, because the UI uses it for the links it shows.
+`PANEL_PORT` chooses the host-side port (default 8000) and `PANEL_BIND` the address it is published
+on (default `0.0.0.0`; use `127.0.0.1` when a tunnel or proxy is the only intended way in). The panel
+itself always listens on 8000; the only deployment that differs is one behind a tunnel, which
+publishes it on **80** instead. `PUBLIC_URL` should match whatever you publish, because the UI uses
+it for the links it shows.
 
 The compose file mounts `/var/run/docker.sock` into the panel and sets
 `TUNNEL_TARGET_HOST=host.docker.internal` so tunnels can reach containers' published ports from
@@ -58,7 +92,7 @@ server/src/
   index.ts      boot: config -> migrate -> buildApp -> listen
   app.ts        Fastify instance, plugins, routes, SPA fallback
   config.ts     env + .env loading
-  db/           pg pool and SQL migrations
+  db/           pg pool, Drizzle schema and the migration runner
   docker/       Docker Engine API service layer (containers, images, volumes, networks, stats)
   auth/         scrypt password hashing, session cookies, roles, audit log
   routes/       one file per resource, mounted under /api
@@ -68,6 +102,35 @@ server/src/
   templates/    template spec, deploy engine, file and repository sources
 web/            React app (see web/DESIGN.md for the design system)
 ```
+
+### Database and migrations
+
+The schema is defined once, in TypeScript, with [Drizzle](https://orm.drizzle.team):
+`server/src/db/schema.ts`. `drizzle-kit` generates the SQL from it into `server/drizzle/`, and the
+server applies that at boot through Drizzle's migrator, so starting the panel is also migrating it.
+
+```bash
+cd server
+npx drizzle-kit generate      # after editing schema.ts: writes server/drizzle/NNNN_name.sql
+```
+
+Changing the schema means editing `schema.ts` and generating, not writing SQL by hand. The generated
+baseline migration is written entirely with `IF NOT EXISTS` and declares every constraint inline, so
+it is a no-op against a database that already has the tables. That matters more than it sounds: the
+migrator runs any migration it has not recorded, and a database that predates Drizzle has no journal
+at all, so the first boot after an upgrade applies the baseline to a fully populated schema. Being a
+no-op there is the expected outcome, not a failure.
+
+`scripts/diff-schema.mjs` is the check for that. It builds a throwaway database from the migrations
+and compares it, table by table, column by column, constraint by constraint, against a reference
+database, then exits non-zero if anything differs:
+
+```bash
+node scripts/diff-schema.mjs            # server/drizzle vs the database named in DATABASE_URL
+node scripts/diff-schema.mjs --keep     # leave the throwaway database for inspection
+```
+
+The reference database is read-only; only the throwaway is written to and dropped.
 
 ### API
 
