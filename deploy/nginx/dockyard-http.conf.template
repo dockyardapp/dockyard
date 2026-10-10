@@ -1,0 +1,80 @@
+# Dockyard behind nginx: plain HTTP, no TLS.
+#
+# Use this when TLS terminates somewhere else in front (a load balancer, Cloudflare, another
+# proxy) or when the panel is deliberately served over plain HTTP on a private network. When TLS
+# is terminated here instead, use dockyard-tls.conf.template.
+#
+# install.sh renders this to <repo>/data/nginx/dockyard.conf and bind-mounts it read-only to
+# /etc/nginx/conf.d/default.conf. It substitutes two placeholders with sed:
+#   @@SERVER_NAME@@   the domain, the host IP, or _ to match any name
+#   @@UPSTREAM@@      the panel address: panel:8000 inside compose, 127.0.0.1:8000 for host nginx
+#
+# When TLS terminates in front, the app still needs COOKIE_SECURE=true in production, because the
+# browser is the one that decides whether to send the cookie and it only ever sees HTTPS. This
+# server sets X-Forwarded-Proto from $scheme, which is http here, so the panel cannot tell it is
+# behind TLS from this header alone. If the outer proxy is the one that knows it is https, have it
+# set X-Forwarded-Proto: https; the panel trusts the header because it runs with trustProxy on.
+#
+# The WebSocket endpoints (/ws/containers/:id/logs, /ws/containers/:id/stats, /ws/events) carry live
+# log and stats traffic, so the Upgrade/Connection headers and a long read timeout are required or
+# the log view drops every 60s.
+
+server {
+    listen 80;
+    listen [::]:80;
+    server_name @@SERVER_NAME@@;
+
+    # The app sets these on its own responses too; repeating them here covers anything nginx
+    # generates itself (error pages, redirects).
+    add_header X-Content-Type-Options nosniff always;
+    add_header X-Frame-Options DENY always;
+    add_header Referrer-Policy strict-origin-when-cross-origin always;
+    add_header Permissions-Policy "camera=(), microphone=(), geolocation=()" always;
+
+    # Panel sessions are cookies, not headers, so no CORS dance is needed.
+    client_max_body_size 4m;
+
+    gzip on;
+    gzip_types text/css application/javascript application/json image/svg+xml;
+    gzip_min_length 1024;
+
+    # Long-lived WebSocket upgrades need HTTP/1.1 and the hop-by-hop headers set.
+    location /ws/ {
+        proxy_pass http://@@UPSTREAM@@;
+        proxy_http_version 1.1;
+        proxy_set_header Upgrade $http_upgrade;
+        proxy_set_header Connection "upgrade";
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+
+        # Log and stats streams are idle between frames; do not cut them at 60s.
+        proxy_read_timeout 3600s;
+        proxy_send_timeout 3600s;
+        proxy_buffering off;
+    }
+
+    # Image pulls stream progress and can take minutes.
+    location /api/images/pull {
+        proxy_pass http://@@UPSTREAM@@;
+        proxy_http_version 1.1;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+        proxy_read_timeout 600s;
+        proxy_buffering off;
+    }
+
+    location / {
+        proxy_pass http://@@UPSTREAM@@;
+        proxy_http_version 1.1;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+        proxy_set_header Connection "";
+        proxy_read_timeout 120s;
+    }
+}

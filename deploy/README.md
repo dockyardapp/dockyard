@@ -46,6 +46,24 @@ empty value switches the source off; see `.env.example`.
 
 ## 2. Reverse proxy and TLS
 
+`install.sh` can do all of this itself. `--proxy` brings up the `nginx` service from the compose file,
+renders one of the templates in `deploy/nginx/` into `data/nginx/dockyard.conf`, and gets a
+certificate:
+
+```sh
+sudo ./install.sh --proxy --cert self-signed --domain <host>     # works now, no domain needed
+sudo ./install.sh --proxy --cert letsencrypt --domain <host>     # needs public DNS and port 80
+sudo ./install.sh --proxy --cert none                            # plain HTTP behind nginx
+```
+
+It republishes the panel on `127.0.0.1` so nginx is the only public door, and it sets `NODE_ENV` and
+`COOKIE_SECURE` to match whether TLS is actually on, which the config layer requires to agree. The
+service is gated behind the `proxy` compose profile and switched on by `COMPOSE_PROFILES=proxy` in
+`.env`, so `deploy/update.sh` and a hand-typed `docker compose up -d` both keep it without being told.
+
+Everything below is the manual path, for an nginx you run on the host yourself. It is also worth
+reading if you want to understand what the templates do.
+
 Copy `deploy/nginx.conf.example` to `/etc/nginx/sites-available/dockyard`, set
 `server_name` and the certificate paths, symlink it into `sites-enabled`, then:
 
@@ -64,10 +82,10 @@ To get the certificate:
 certbot --nginx -d <host> --non-interactive --agree-tos --redirect
 ```
 
-Two things to check before enabling HSTS. The config ships with it enabled, so
-if you are unsure, comment the `Strict-Transport-Security` line out for the first
-deploy: HSTS makes browsers refuse the plain-HTTP fallback, so a broken
-certificate becomes unrecoverable without clearing browser state.
+Two things to check before enabling HSTS. The standalone example enables it; the templates under
+`deploy/nginx/` that the installer renders ship it commented out, deliberately, because a
+self-signed certificate plus HSTS is a browser you cannot get back into without clearing state. If
+you are unsure, comment the `Strict-Transport-Security` line out for the first deploy.
 
 If you manage the certificate yourself rather than with certbot, note that
 `ssl_certificate_key` must be readable by the nginx **worker** user (usually

@@ -41,6 +41,11 @@ services:
       PORT: 8000
       HOST: 0.0.0.0
       PUBLIC_URL: ${PUBLIC_URL:-http://localhost:8000}
+      # The server resolves an unset COOKIE_SECURE to "secure in production" (see resolveCookieSecure
+      # in server/src/config.ts). Without this line the value in .env never reaches the container, so
+      # a direct-HTTP install gets a Secure session cookie the browser silently drops and sign-in
+      # fails in a browser even though curl-based checks pass. Forwarding it lets install.sh choose.
+      COOKIE_SECURE: ${COOKIE_SECURE:-}
       DATABASE_URL: postgres://dockyard:${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD}@db:5432/dockyard
       SECRET_KEY: ${SECRET_KEY:?set SECRET_KEY (64 hex chars)}
       # The panel is itself a container, so a tunnel targeting another container's
@@ -97,6 +102,33 @@ services:
       # the host and the panel picks it up on the next read, with no rebuild and no restart. See
       # deploy/template-examples/ for files to copy in.
       - ./data/templates:/app/data/templates
+
+  # Opt-in TLS reverse proxy. Gated on the "proxy" profile, so COMPOSE_PROFILES=proxy in .env (or
+  # `--profile proxy`) brings it up and a bare `docker compose up -d` leaves it down. Compose reads
+  # COMPOSE_PROFILES from .env itself, so install.sh and deploy/update.sh turn the proxy on and off
+  # by writing one variable and neither script has to know the proxy exists.
+  nginx:
+    image: nginx:alpine
+    profiles: ["proxy"]
+    restart: unless-stopped
+    depends_on:
+      - panel
+    ports:
+      # The one intended public door when the profile is on. Set PANEL_BIND=127.0.0.1 alongside it:
+      # the panel mounts the Docker socket, so its own published port is a root-equivalent door and
+      # must not stay reachable from outside once nginx is in front.
+      - "${PROXY_BIND:-0.0.0.0}:${PROXY_HTTP_PORT:-80}:80"
+      - "${PROXY_BIND:-0.0.0.0}:${PROXY_HTTPS_PORT:-443}:443"
+    volumes:
+      # install.sh renders one of deploy/nginx/*.template here. Read-only: nothing in the container
+      # has any reason to rewrite the proxy config, and a compromised nginx should not be able to.
+      - ./data/nginx/dockyard.conf:/etc/nginx/conf.d/default.conf:ro
+      # The certificate pair. gen-cert.sh writes a self-signed one here; a Let's Encrypt renewal
+      # writes the issued one. Read-only for the same reason.
+      - ./data/nginx/certs:/etc/nginx/certs:ro
+      # ACME webroot. certbot writes the HTTP-01 challenge here on the host and nginx only reads it,
+      # so this mount is read-only too.
+      - ./data/nginx/www:/var/www/certbot:ro
 
 volumes:
   dockyard-pg:

@@ -51,7 +51,15 @@ sudo ./install.sh
 It supports `apt`, `dnf`, `yum` and `zypper`, and is safe to re-run: an existing checkout is reused,
 an existing `.env` is never rewritten, and the image is rebuilt from whatever the checkout holds. The
 useful flags are `--dir`, `--port`, `--bind`, `--public-url`, `--email`, `--password`, `--no-admin`,
-`--no-updater` and `--dry-run`; `--help` lists them all with the reasoning.
+`--no-updater`, `--proxy`, `--cert`, `--domain`, `--http-port`, `--https-port` and `--dry-run`;
+`--help` lists them all with the reasoning.
+
+Run it with no flags on a terminal and it asks the questions it cannot answer for you, as a menu: how
+the panel should be reached, whether nginx terminates TLS, what certificate to use, which address to
+listen on, and who the first account is. It ends on a summary and waits for confirmation before it
+writes anything. Passing any of `--proxy`, `--cert`, `--domain`, `--bind` or `--email` counts as
+having answered, and piped into bash with no terminal it uses the defaults, so `curl | bash` still
+installs unattended.
 
 Two decisions in it are worth knowing about, because both are about the panel's blast radius:
 
@@ -61,6 +69,32 @@ Two decisions in it are worth knowing about, because both are about the panel's 
   is a race that whoever finds the port first wins. `--no-admin` takes that race deliberately.
 - **It publishes on `0.0.0.0` by default**, and warns about it. `--bind 127.0.0.1` keeps the panel on
   the host, which is what you want when a tunnel or a reverse proxy is the only intended way in.
+
+### Behind nginx, with a certificate
+
+`--proxy` adds an nginx service in front of the panel and stops publishing the panel on every
+interface: the panel moves to `127.0.0.1:8000` and nginx becomes the only public door.
+
+```bash
+sudo ./install.sh --proxy --cert self-signed --domain dockyard.example.com
+```
+
+`--cert self-signed` works immediately and needs no domain. The browser warns once until you accept
+the certificate, which is the whole of the tradeoff. `--cert letsencrypt` gets a certificate every
+browser trusts, but the domain has to already resolve to the host and port 80 has to be reachable
+from the internet, because that is how the certificate authority confirms you own it. `--cert none`
+serves plain HTTP behind nginx, for a host where something else terminates TLS or that is only
+reached over a tunnel.
+
+The certificate and the rendered nginx config live in `data/nginx/`, which is neither committed nor
+baked into the image. Re-running the installer is safe: `deploy/nginx/gen-cert.sh` leaves an existing,
+unexpired certificate alone unless you pass `--force`.
+
+One thing to know about the plain-HTTP case. The panel marks its session cookie `Secure`, and it
+refuses to boot in production with an insecure one, because a browser will not send a secure cookie
+over http: sign-in would fail with nothing in the log to say why. So an install that is not behind
+TLS runs with `NODE_ENV=development`, which is what permits the insecure cookie. That is the only
+thing the mode changes in the server. Put TLS in front of a panel on a public address.
 
 ## Quick start (Docker Compose)
 
