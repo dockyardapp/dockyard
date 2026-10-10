@@ -291,6 +291,12 @@ signals element size rather than adding decoration.
 - **link / link-hover:** accent violet, brightening to `accent-hover` on hover.
 - **pill-*:** status badges. One pill per state, never two.
 - **empty:** the no-data state. Its title is a real `h2`, so a screen reader can jump straight to it.
+- **error-boundary:** what replaces a view that threw while rendering. It reuses `empty` rather than
+  inventing a crash page, so a broken view looks like the app with nothing to show, plus the
+  message in `mono` and one button. Mounted twice: around the routed page inside `AppShell`, so a
+  broken view keeps its nav and the operator can click away from it, and around the whole app. With
+  no boundary at all React unmounts everything it rendered and the operator gets a blank page with
+  no way back, which is the one failure a console cannot afford.
 - **row-cap:** the footer under a capped table. Names the visible count, the true total and the way
   to see everything.
 - **pick-list / pick-row:** the tick-a-resource list in the access dialog. Scrolls past 264px inside

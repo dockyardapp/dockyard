@@ -4,6 +4,7 @@ import { useAuth } from '../hooks/useAuth';
 import { useEvents } from '../hooks/useEvents';
 import { can } from '../lib/rbac';
 import { BrandMark, Icon, type IconName } from './Icons';
+import { ErrorBoundary } from './ErrorBoundary';
 import { VersionBadge } from './VersionBadge';
 import { Banner, Button, Pill } from './ui';
 
@@ -158,7 +159,9 @@ export function AppShell() {
               allocation if something is missing.
             </Banner>
           ) : null}
-          <Outlet />
+          <ErrorBoundary title="This view stopped responding">
+            <Outlet />
+          </ErrorBoundary>
         </main>
       </div>
     </div>

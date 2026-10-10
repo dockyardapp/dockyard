@@ -2,6 +2,7 @@ import { StrictMode } from 'react';
 import { createRoot } from 'react-dom/client';
 import { BrowserRouter } from 'react-router-dom';
 import { App } from './App';
+import { ErrorBoundary } from './components/ErrorBoundary';
 import { AuthProvider } from './hooks/useAuth';
 import { ConfirmProvider } from './components/ui';
 import './styles/tokens.css';
@@ -23,7 +24,11 @@ createRoot(root).render(
     <BrowserRouter>
       <AuthProvider>
         <ConfirmProvider>
-          <App />
+          {/* Outer boundary: a crash in the shell itself still says something instead of blanking
+              the page. The inner one in AppShell keeps the nav alive for a broken view. */}
+          <ErrorBoundary title="The panel stopped responding">
+            <App />
+          </ErrorBoundary>
         </ConfirmProvider>
       </AuthProvider>
     </BrowserRouter>
