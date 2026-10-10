@@ -204,8 +204,8 @@ export function ContainerTunnels({
             }
           >
             {published.length === 0
-              ? 'This container has no published port. A quick or localtunnel tunnel needs no Cloudflare account.'
-              : 'A quick or localtunnel tunnel needs no Cloudflare account. A named tunnel gives you a stable hostname on your own domain.'}
+              ? 'This container publishes no port, so there is nothing to expose yet.'
+              : 'A quick tunnel or localtunnel needs no Cloudflare account. A named tunnel gives you a stable hostname on your own domain.'}
           </EmptyState>
         ) : (
           <div className="table-wrap">

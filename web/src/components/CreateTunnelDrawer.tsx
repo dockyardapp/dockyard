@@ -246,34 +246,42 @@ export function CreateTunnelDrawer({
               ) : null}
             </>
           )}
-          <Field
-            label="Published port"
-            htmlFor="tunnel-target-port"
-            hint={
-              publishedPorts.length === 0
-                ? 'This container publishes no port. Publish one, or point at a raw URL instead.'
-                : publishedPorts.length === 1
-                  ? 'The single published port is used automatically.'
+          {publishedPorts.length === 1 ? (
+            // A picker with one real choice is furniture: the container decides this, so show what
+            // it decided rather than a dropdown the operator cannot meaningfully use.
+            <Field label="Published port" hint="This container publishes one port, so it is used automatically.">
+              <span className="mono-cell">
+                {publishedPorts[0].publicPort} -&gt; {publishedPorts[0].privatePort}/{publishedPorts[0].type}
+              </span>
+            </Field>
+          ) : (
+            <Field
+              label="Published port"
+              htmlFor="tunnel-target-port"
+              hint={
+                publishedPorts.length === 0
+                  ? 'This container publishes no port. Publish one, or point at a raw URL instead.'
                   : 'Leave blank to use the container default.'
-            }
-          >
-            <select
-              id="tunnel-target-port"
-              value={port}
-              onChange={(e) => setPort(e.target.value)}
-              disabled={busy || publishedPorts.length === 0}
+              }
             >
-              <option value="">auto</option>
-              {publishedPorts.map((p) => (
-                <option
-                  key={`${p.ip ?? 'any'}:${p.publicPort}->${p.privatePort}/${p.type}`}
-                  value={String(p.publicPort)}
-                >
-                  {p.publicPort} -&gt; {p.privatePort}/{p.type}
-                </option>
-              ))}
-            </select>
-          </Field>
+              <select
+                id="tunnel-target-port"
+                value={port}
+                onChange={(e) => setPort(e.target.value)}
+                disabled={busy || publishedPorts.length === 0}
+              >
+                <option value="">auto</option>
+                {publishedPorts.map((p) => (
+                  <option
+                    key={`${p.ip ?? 'any'}:${p.publicPort}->${p.privatePort}/${p.type}`}
+                    value={String(p.publicPort)}
+                  >
+                    {p.publicPort} -&gt; {p.privatePort}/{p.type}
+                  </option>
+                ))}
+              </select>
+            </Field>
+          )}
         </>
       ) : (
         <TextField

@@ -116,7 +116,8 @@ describe('ContainerTunnels', () => {
     // The name is derived from both, so the operator only has to choose a mode. The label carries a
     // `required` marker inside it, so match on the start of it rather than the whole string.
     expect(within(dialog).getByLabelText(/^Name/)).toHaveValue('dy-web-8080');
-    expect(within(dialog).getByLabelText('Published port')).toHaveValue('8080');
+    // One published port is a value, not a picker.
+    expect(within(dialog).getByText('8080 -> 80/tcp')).not.toBeNull();
     // And the container is the one they were looking at, not a dropdown to pick from.
     expect(within(dialog).getByText('dy-web')).not.toBeNull();
   });
@@ -125,7 +126,11 @@ describe('ContainerTunnels', () => {
     render({ ports: [{ privatePort: 80, type: 'tcp' }] });
 
     await waitFor(() => expect(screen.getByText('Published ports (0)')).not.toBeNull());
-    expect(screen.getByText(/publishes no port/i)).not.toBeNull();
+    // The empty state says why, in its own words: the drawer's hint says something similar, so this
+    // asserts the sentence rather than the phrase they share.
+    expect(
+      screen.getByText('This container publishes no port, so there is nothing to expose yet.'),
+    ).not.toBeNull();
     // There is still a way in, because a raw URL needs no published port.
     expect(screen.getByRole('button', { name: 'Expose a port' })).not.toBeNull();
   });

@@ -483,8 +483,9 @@ test('exposing a port carries the container and the port with it, and offers loc
     await page.getByRole('button', { name: 'Expose', exact: true }).click();
     const dialog = page.getByRole('dialog');
     await expect(dialog).toBeVisible();
-    await expect(dialog.getByLabel('Name')).toHaveValue(`${container.name}-${container.hostPort}`);
-    await expect(dialog.getByLabel('Published port')).toHaveValue(String(container.hostPort));
+    await expect(dialog.getByLabel(/^Name/)).toHaveValue(`${container.name}-${container.hostPort}`);
+    // One published port is a value, not a picker: the container decides it.
+    await expect(dialog.getByText(`${container.hostPort} -> 80/tcp`)).toBeVisible();
 
     const chip = dialog.getByRole('button', { name: 'localtunnel' });
     await expect(chip).toBeVisible();
