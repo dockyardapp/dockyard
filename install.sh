@@ -210,16 +210,49 @@ docker_group_id() {
   fi
 }
 
-# A best-effort address to put in PUBLIC_URL, which only decides the links the UI shows. `ip` lives
-# in iproute2 and is absent from minimal images, so nothing here may be required for the install to
-# continue: the fallback is localhost, and --public-url overrides it.
+# The host's own outward address: what a certificate is issued for in bare-IP mode, and what
+# PUBLIC_URL defaults to.
+#
+# This has to be right, not merely best-effort, because a certificate for the wrong address is one no
+# client can match. `ip` lives in iproute2 and minimal images do not have it (the debian base image
+# ships without it), so the fallback is what usually runs, and `hostname -I | awk '{print $1}'` is
+# the wrong way to pick from it: on a host that runs Docker the list also holds the bridge addresses,
+# and once docker0 exists the first entry can be the bridge. The installer starts Docker itself, so a
+# re-run (enabling the proxy, say) is exactly when that happens, and the install would then issue a
+# certificate for 172.17.0.1, which nothing outside the host can reach.
+#
+# Instead the address is matched against the default route's gateway, read from the kernel's own
+# table: the host's outward address is in the same subnet as the gateway it routes through, and a
+# Docker bridge is not. --public-url and the name field in the setup both override it.
 detect_host_ip() {
-  local found=""
+  local found="" gw="" a
   if command -v ip >/dev/null 2>&1; then
     found="$(ip -4 route get 1.1.1.1 2>/dev/null | awk '{for(i=1;i<=NF;i++) if($i=="src"){print $(i+1); exit}}' || true)"
   fi
+  if [ -z "$found" ] && [ -r /proc/net/route ] && command -v hostname >/dev/null 2>&1; then
+    # /proc/net/route holds the gateway as a little-endian 32-bit hex value, so the octets read out
+    # of the string in reverse.
+    gw="$(awk '$2=="00000000" && $8=="00000000" {print $3; exit}' /proc/net/route 2>/dev/null || true)"
+    case "$gw" in
+      [0-9A-Fa-f][0-9A-Fa-f][0-9A-Fa-f][0-9A-Fa-f][0-9A-Fa-f][0-9A-Fa-f][0-9A-Fa-f][0-9A-Fa-f])
+        gw="$(printf '%d.%d.%d.%d' 0x${gw:6:2} 0x${gw:4:2} 0x${gw:2:2} 0x${gw:0:2})" ;;
+      *) gw="" ;;
+    esac
+    if [ -n "$gw" ]; then
+      for a in $(hostname -I 2>/dev/null); do
+        case "$a" in 127.*|169.254.*) continue ;; esac
+        if [ "${a%.*}" = "${gw%.*}" ]; then found="$a"; break; fi
+      done
+    fi
+  fi
+  # Nothing matched the gateway (a host with no default route, or one where it is not on the same
+  # subnet): take any address that is not a loopback or link-local one, and never a Docker bridge.
   if [ -z "$found" ] && command -v hostname >/dev/null 2>&1; then
-    found="$(hostname -I 2>/dev/null | awk '{print $1}' || true)"
+    for a in $(hostname -I 2>/dev/null); do
+      case "$a" in 127.*|169.254.*|172.17.*) continue ;; esac
+      found="$a"; break
+    done
+    [ -n "$found" ] || found="$(hostname -I 2>/dev/null | awk '{print $1}' || true)"
   fi
   [ -n "$found" ] || found="localhost"
   printf '%s' "$found"
@@ -877,19 +910,19 @@ fi
 
 # ---------------------------------------------------------------------------- packages
 
-step "Installing base packages (ca-certificates, curl, git, openssl)"
+step "Installing base packages (ca-certificates, curl, git, openssl, iproute2)"
 
 install_base_packages() {
   case "$PM" in
     apt)
       run_quiet_sh 'DEBIAN_FRONTEND=noninteractive apt-get update -qq' || return 1
-      run_quiet_sh 'DEBIAN_FRONTEND=noninteractive apt-get install -y -qq ca-certificates curl git openssl' || return 1
+      run_quiet_sh 'DEBIAN_FRONTEND=noninteractive apt-get install -y -qq ca-certificates curl git openssl iproute2' || return 1
       ;;
     dnf|yum)
-      run_quiet "$PM" install -y -q ca-certificates curl git openssl || return 1
+      run_quiet "$PM" install -y -q ca-certificates curl git openssl iproute || return 1
       ;;
     zypper)
-      run_quiet zypper --non-interactive install ca-certificates curl git openssl || return 1
+      run_quiet zypper --non-interactive install ca-certificates curl git openssl iproute2 || return 1
       ;;
   esac
   return 0
@@ -1389,6 +1422,21 @@ cd "$INSTALL_DIR"
 # Postgres and the Node base image, so it is minutes on a small host, not seconds.
 if ! "${COMPOSE[@]}" up -d --build; then
   die "'${COMPOSE[*]} up -d --build' failed. The output above says why."
+fi
+
+# nginx reads its config at startup, and the file is bind-mounted, so a container that compose did not
+# recreate keeps serving the config it read then. A re-run that only changes the certificate or the
+# name (--domain) leaves the nginx service definition untouched, so compose leaves the container alone
+# and the newly rendered config is never loaded: nginx keeps handing out the previous certificate,
+# which is a name mismatch for the new one, and the site breaks while every file on disk looks right.
+# Recreating it also repairs a container left half-created by an earlier failed port bind, which is
+# the state that crash-loops on `host not found in upstream`. Dependencies are left alone: they are
+# already up and correct.
+if [ "$PROXY_ENABLE" = "yes" ]; then
+  if ! "${COMPOSE[@]}" up -d --force-recreate --no-deps nginx; then
+    die "'${COMPOSE[*]} up -d --force-recreate --no-deps nginx' failed. The output above says why."
+  fi
+  say "nginx recreated, so the config it is serving is the one just rendered"
 fi
 
 # ---------------------------------------------------------------------------- prove it works
