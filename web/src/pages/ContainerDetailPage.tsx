@@ -8,6 +8,7 @@ import { useAuth } from '../hooks/useAuth';
 import { can } from '../lib/rbac';
 import { Icon } from '../components/Icons';
 import { LogViewer } from '../components/LogViewer';
+import { ContainerTunnels } from '../components/ContainerTunnels';
 import { JsonView } from '../components/JsonView';
 import { StatsChart } from '../components/Sparkline';
 import {
@@ -35,9 +36,10 @@ import {
   splitCommandLine,
 } from '../lib/format';
 
-type TabId = 'overview' | 'logs' | 'stats' | 'inspect' | 'console';
+type TabId = 'overview' | 'tunnels' | 'logs' | 'stats' | 'inspect' | 'console';
 const TABS: Array<{ id: TabId; label: string }> = [
   { id: 'overview', label: 'Overview' },
+  { id: 'tunnels', label: 'Tunnels' },
   { id: 'logs', label: 'Logs' },
   { id: 'stats', label: 'Stats' },
   { id: 'inspect', label: 'Inspect' },
@@ -52,6 +54,7 @@ export function ContainerDetailPage() {
   const confirm = useConfirm();
   const canWrite = can.write(user?.role);
   const canDestroy = can.destroy(user?.role);
+  const isAdmin = can.manageSettings(user?.role);
   // Exec needs both the operator role and the explicit capability: on a host with
   // the Docker socket mounted a shell in a container is root-equivalent.
   const canExec = canWrite && can.exec(user?.role, user?.can_exec);
@@ -230,6 +233,18 @@ export function ContainerDetailPage() {
           <OverviewTab detail={c} />
         ) : null
       ) : null}
+      {tab === 'tunnels' ? (
+        c ? (
+          <ContainerTunnels
+            containerId={id}
+            containerName={c.name}
+            ports={c.ports}
+            canWrite={canWrite}
+            canDestroy={canDestroy}
+            isAdmin={isAdmin}
+          />
+        ) : null
+      ) : null}
       {tab === 'logs' ? <LogViewer containerId={id} /> : null}
       {tab === 'stats' ? <StatsTab containerId={id} state={c?.state} /> : null}
       {tab === 'inspect' ? <InspectTab containerId={id} /> : null}
@@ -293,7 +308,14 @@ function OverviewTab({ detail }: { detail: ContainerDetail }) {
       </Card>
 
       <div className="grid grid-2">
-        <Card title={`Ports (${ports.length})`}>
+        <Card
+          title={`Ports (${ports.length})`}
+          actions={
+            <Link className="dim" to={`/containers/${detail.id}?tab=tunnels`} style={{ fontSize: 'var(--fs-micro)' }}>
+              Expose a port
+            </Link>
+          }
+        >
           {ports.length === 0 ? (
             <p className="dim" style={{ fontSize: 'var(--fs-xs)', margin: 0 }}>No published ports.</p>
           ) : (

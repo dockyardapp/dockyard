@@ -18,7 +18,6 @@ const GROUPS: Array<{ label: string; items: NavEntry[] }> = [
       { to: '/containers', label: 'Containers', icon: 'container' },
       { to: '/templates', label: 'Templates', icon: 'template' },
       { to: '/stacks', label: 'Stacks', icon: 'stack' },
-      { to: '/tunnels', label: 'Tunnels', icon: 'tunnel' },
     ],
   },
   {
@@ -44,7 +43,6 @@ const TITLES: Array<[RegExp, string]> = [
   [/^\/containers$/, 'Containers'],
   [/^\/templates$/, 'Templates'],
   [/^\/stacks$/, 'Stacks'],
-  [/^\/tunnels$/, 'Tunnels'],
   [/^\/images$/, 'Images'],
   [/^\/volumes$/, 'Volumes'],
   [/^\/networks$/, 'Networks'],

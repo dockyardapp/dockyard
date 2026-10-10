@@ -210,16 +210,24 @@ export function DashboardPage() {
         <Card
           title={`Active tunnels (${activeTunnels.length})`}
           actions={
-            <Link className="dim" to="/tunnels" style={{ fontSize: 'var(--fs-micro)' }}>
-              Manage
+            <Link className="dim" to="/containers" style={{ fontSize: 'var(--fs-micro)' }}>
+              By container
             </Link>
           }
         >
           {tunnels.loading && !tunnels.data ? (
             <SkeletonRows rows={3} cols={3} />
           ) : activeTunnels.length === 0 ? (
-            <EmptyState icon="tunnel" title="No active tunnels" action={<Link to="/tunnels" className="btn">Create a tunnel</Link>}>
-              Expose a container port or a URL through Cloudflare.
+            <EmptyState
+              icon="tunnel"
+              title="No active tunnels"
+              action={
+                <Link to="/containers" className="btn">
+                  Pick a container
+                </Link>
+              }
+            >
+              A tunnel is opened from the container it exposes, on that container's Tunnels tab.
             </EmptyState>
           ) : (
             <div className="table-wrap">

@@ -3,7 +3,7 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 import { expect, test } from '@playwright/test';
-import type { Page } from '@playwright/test';
+import type { APIRequestContext, Page } from '@playwright/test';
 import {
   adminCredentials,
   deleteUser,
@@ -55,7 +55,6 @@ const ROUTES: Array<{ path: string; heading: string }> = [
   { path: '/containers', heading: 'Containers' },
   { path: '/templates', heading: 'Templates' },
   { path: '/stacks', heading: 'Stacks' },
-  { path: '/tunnels', heading: 'Tunnels' },
   { path: '/images', heading: 'Images' },
   { path: '/volumes', heading: 'Volumes' },
   { path: '/networks', heading: 'Networks' },
@@ -393,58 +392,112 @@ test('container exec is off by default and an admin can turn it on', async ({
   }
 });
 
-test('the tunnels page explains the modes on its own tab', async ({ page }) => {
-  await login(page, admin.email, admin.password);
-  await page.goto('/tunnels');
+/**
+ * A real container with a real published port, for the tests that need one to hang routing on.
+ *
+ * The port is drawn from the high range so a run cannot collide with whatever the host is already
+ * publishing, and the container is removed in the caller's `finally`.
+ */
+async function makePublishedContainer(
+  request: APIRequestContext,
+  baseURL: string,
+  prefix: string,
+): Promise<{ id: string; name: string; hostPort: number }> {
+  const stamp = Date.now();
+  const name = `${prefix}-${stamp}`;
+  const hostPort = 30000 + Math.floor(Math.random() * 9000);
+  await request.post(`${baseURL}/api/auth/login`, { data: admin });
+  const created = await request.post(`${baseURL}/api/containers`, {
+    data: {
+      name,
+      image: 'alpine:3.20',
+      cmd: ['sh', '-c', 'sleep 120'],
+      pull: false,
+      ports: [{ container: 80, host: hostPort }],
+    },
+  });
+  expect(created.status(), await created.text()).toBe(201);
+  const { id } = (await created.json()) as { id: string };
+  // Docker reports no port bindings until a container has actually run, so a container left in
+  // `created` reads as publishing nothing and the port table is empty.
+  const started = await request.post(`${baseURL}/api/containers/${id}/start`);
+  expect(started.status(), await started.text()).toBe(200);
+  return { id, name, hostPort };
+}
 
-  // The list is the default surface.
-  await expect(page.getByRole('tab', { name: 'Tunnels' })).toHaveAttribute('aria-selected', 'true');
+test('a container is where its ports and tunnels live, and the separate tunnels page is gone', async ({
+  page,
+  request,
+  baseURL,
+}) => {
+  const container = await makePublishedContainer(request, baseURL!, 'dy-e2e-tunnel');
 
-  await page.getByRole('tab', { name: 'How it works' }).click();
-  await expect(page).toHaveURL(/tab=how/);
+  try {
+    await login(page, admin.email, admin.password);
 
-  // Every mode gets a column, and the guidance covers when to use each one.
-  const guide = page.locator('table.data').first();
-  for (const mode of ['quick', 'named', 'localtunnel']) {
-    await expect(guide.getByRole('columnheader', { name: mode })).toBeVisible();
+    // Routing no longer has a section of its own: the nav offers no Tunnels entry, and the old
+    // path is not a route any more.
+    await expect(page.locator('.nav-item', { hasText: 'Tunnels' })).toHaveCount(0);
+    await page.goto('/tunnels');
+    await expect(page.getByRole('heading', { level: 1 })).toHaveText(/page not found/i);
+
+    await page.goto(`/containers/${container.id}?tab=tunnels`);
+
+    // The container's own published port, with the action that exposes it.
+    await expect(page.getByRole('cell', { name: String(container.hostPort) })).toBeVisible();
+    await expect(page.getByRole('button', { name: 'Expose', exact: true })).toBeVisible();
+
+    // The reference material is behind a button rather than owning a tab of its own.
+    await page.getByRole('button', { name: 'How it works' }).click();
+    const guide = page.getByRole('dialog', { name: 'How tunnels work' });
+    await expect(guide).toBeVisible();
+
+    const table = guide.locator('table.data').first();
+    for (const mode of ['quick', 'named', 'localtunnel']) {
+      await expect(table.getByRole('columnheader', { name: mode })).toBeVisible();
+    }
+    await expect(guide.getByText(/adds no authentication of its own/i)).toBeVisible();
+    await guide.getByRole('button', { name: 'Close' }).last().click();
+
+    // The tab is in the URL, so a reload keeps it.
+    await page.reload();
+    await expect(page.getByRole('tab', { name: 'Tunnels' })).toHaveAttribute('aria-selected', 'true');
+  } finally {
+    await request.post(`${baseURL}/api/auth/login`, { data: admin });
+    await request.delete(`${baseURL}/api/containers/${container.id}?force=1`);
   }
-  await expect(page.getByText(/adds no authentication of its own/i)).toBeVisible();
-
-  // The tab is in the URL, so a reload keeps it.
-  await page.reload();
-  await expect(page.getByRole('tab', { name: 'How it works' })).toHaveAttribute(
-    'aria-selected',
-    'true',
-  );
-
-  // And back to the list, which drops the parameter.
-  await page.getByRole('tab', { name: 'Tunnels' }).click();
-  await expect(page).not.toHaveURL(/tab=how/);
-  await expect(page.getByRole('button', { name: 'Create tunnel' })).toBeVisible();
 });
 
-test('the create-tunnel dialog offers localtunnel, which needs no Cloudflare account', async ({
+test('exposing a port carries the container and the port with it, and offers localtunnel', async ({
   page,
+  request,
+  baseURL,
 }) => {
-  await login(page, admin.email, admin.password);
-  await page.goto('/tunnels');
-  await page.getByRole('button', { name: 'Create tunnel' }).click();
+  const container = await makePublishedContainer(request, baseURL!, 'dy-e2e-expose');
 
-  const dialog = page.getByRole('dialog');
-  const chip = dialog.getByRole('button', { name: 'localtunnel' });
-  await expect(chip).toBeVisible();
+  try {
+    await login(page, admin.email, admin.password);
+    await page.goto(`/containers/${container.id}?tab=tunnels`);
 
-  await chip.click();
-  await expect(chip).toHaveAttribute('aria-pressed', 'true');
-  await expect(dialog.getByText(/assigned by localtunnel\.me/i)).toBeVisible();
+    // The per-port action arrives already knowing what it is exposing.
+    await page.getByRole('button', { name: 'Expose', exact: true }).click();
+    const dialog = page.getByRole('dialog');
+    await expect(dialog).toBeVisible();
+    await expect(dialog.getByLabel('Name')).toHaveValue(`${container.name}-${container.hostPort}`);
+    await expect(dialog.getByLabel('Published port')).toHaveValue(String(container.hostPort));
 
-  // LocalTunnel needs a name and a target and nothing else: no hostname, no zone and
-  // no Cloudflare credentials, so the submit button goes live as soon as both are set.
-  await dialog.getByLabel('Name').fill('e2e-localtunnel');
-  await dialog.getByRole('button', { name: 'raw URL' }).click();
-  await dialog.getByLabel('Target URL').fill('http://127.0.0.1:8080');
+    const chip = dialog.getByRole('button', { name: 'localtunnel' });
+    await expect(chip).toBeVisible();
+    await chip.click();
+    await expect(chip).toHaveAttribute('aria-pressed', 'true');
+    await expect(dialog.getByText(/assigned by localtunnel\.me/i)).toBeVisible();
 
-  await expect(dialog.getByRole('button', { name: 'Create tunnel' })).toBeEnabled();
+    // LocalTunnel needs no hostname and no Cloudflare credentials, so Create is live already.
+    await expect(dialog.getByRole('button', { name: 'Create tunnel' })).toBeEnabled();
+  } finally {
+    await request.post(`${baseURL}/api/auth/login`, { data: admin });
+    await request.delete(`${baseURL}/api/containers/${container.id}?force=1`);
+  }
 });
 
 test('the running version is visible in the chrome and detailed on settings', async ({ page }) => {

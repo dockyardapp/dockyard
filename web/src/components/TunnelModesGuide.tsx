@@ -1,4 +1,4 @@
-// Dockyard — the "How it works" tab on the Tunnels page.
+// Dockyard — the reference behind "How it works" on a container's Tunnels tab.
 //
 // Explains what a tunnel does, compares the three exposure modes and says which one to
 // reach for. The comparison lives in one array so the table, the guidance below it and

@@ -10,7 +10,6 @@ import { ContainersPage } from './pages/ContainersPage';
 import { ContainerDetailPage } from './pages/ContainerDetailPage';
 import { TemplatesPage } from './pages/TemplatesPage';
 import { StacksPage } from './pages/StacksPage';
-import { TunnelsPage } from './pages/TunnelsPage';
 import { ImagesPage } from './pages/ImagesPage';
 import { VolumesPage } from './pages/VolumesPage';
 import { NetworksPage } from './pages/NetworksPage';
@@ -63,7 +62,6 @@ export function App() {
         <Route path="/containers/:id" element={<ContainerDetailPage />} />
         <Route path="/templates" element={<TemplatesPage />} />
         <Route path="/stacks" element={<StacksPage />} />
-        <Route path="/tunnels" element={<TunnelsPage />} />
         <Route path="/images" element={<ImagesPage />} />
         <Route path="/volumes" element={<VolumesPage />} />
         <Route path="/networks" element={<NetworksPage />} />

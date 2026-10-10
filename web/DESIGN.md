@@ -326,17 +326,28 @@ signals element size rather than adding decoration.
   grey lifted only to 3.2 reads as a smudge. A product with no mark falls back to the template's own
   `icon`, which names a glyph in the app's own set, and the mark is `aria-hidden` because the name
   beside it already says which product it is.
-- **tunnel-guide:** the reference tab on the Tunnels page, beside the list. It explains what a tunnel
-  does, compares the three exposure modes and says which to reach for. Reference material is the
-  easiest place to import furniture from somewhere else, so it uses only what the page already owns:
-  `card` sections, `table.data` for the mode comparison, and `kv` rows for the when-to-use, status and
-  caveat lists. The app has no bullet-list style, so the caveats are `dt`/`dd` rows rather than a `ul`.
-  Two details are load-bearing:
+- **tunnel-guide:** the reference material behind **How it works** on a container's Tunnels tab. It
+  explains what a tunnel does, compares the three exposure modes and says which to reach for.
+  Reference material is the easiest place to import furniture from somewhere else, so it uses only
+  what the app already owns: `card` sections, `table.data` for the mode comparison, and `kv` rows for
+  the when-to-use, status and caveat lists. The app has no bullet-list style, so the caveats are
+  `dt`/`dd` rows rather than a `ul`. Two details are load-bearing:
   - The comparison is keyed by `TunnelMode` in code, not positional and not by the modes the
     guide happens to render, so adding an exposure mode to the API fails the build until the guide
     answers for it. A guide that silently omits a mode is worse than no guide.
-  - The tab lives in the URL (`?tab=how`), like the container detail tabs, so it survives a reload and
-    can be linked to.
+  - It is behind a button in a dialog, not a tab of its own. Routing is a thing the operator does on
+    one container, and reference material that owns a permanent slot competes with it for attention.
+- **container-tunnels:** a container's Tunnels tab, and the only place routing happens. It is two
+  cards: the container's own published ports, each with the action that exposes it, and the tunnels
+  that belong to it. Three details are load-bearing:
+  - The container's ports are the options, read off the container rather than chosen from a list of
+    every container on the host. `Expose` on a port row opens the drawer already knowing the
+    container and the port, and pre-fills the name from both, so exposing a port is pick a mode and
+    press Create.
+  - The header action appears only once something is exposed, because until then the empty state
+    carries it. Two controls with the same label on one screen is the same affordance twice.
+  - A tunnel is matched to the container by `container_id`, so a tunnel on a raw URL is deliberately
+    absent here. Those have no container to belong to and are only listed on the dashboard.
 - **login-aside:** the decorative right half of the login screen, and the one place in the product
   where colour is the point rather than a signal. It replaces a host-status block that used to be
   there: before anyone has signed in, a list of the host's container and image counts is not

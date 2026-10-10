@@ -769,9 +769,15 @@ React 19 + Vite + TS, `react-router-dom` v7. No CSS framework: hand-written CSS 
 - Responsive to 390 px: sidebar collapses to a drawer, tables become stacked cards.
 - Live data: log + stats views use the WebSocket endpoints with reconnect/backoff.
 
-Routes: `/login`, `/` (dashboard), `/containers`, `/containers/:id` (tabs: overview, logs, stats,
-inspect, console), `/templates`, `/stacks`, `/tunnels`, `/images`, `/volumes`, `/networks`,
-`/audit`, `/settings`. Unknown route → 404 view.
+Routes: `/login`, `/` (dashboard), `/containers`, `/containers/:id` (tabs: overview, tunnels, logs,
+stats, inspect, console), `/templates`, `/stacks`, `/images`, `/volumes`, `/networks`, `/audit`,
+`/settings`. Unknown route → 404 view.
+
+Routing lives on the container, not on a page of its own. A tunnel reaches one container port, so
+`/containers/:id?tab=tunnels` is where a port is exposed and where that container's tunnels are
+started, stopped and deleted. There is no `/tunnels` route; the API under §6 is unchanged. A tunnel
+may still target a raw URL the panel can reach, for something not in Docker: that one has no
+container to live under and is only listed on the dashboard.
 
 `web/src/api/types.ts` mirrors §6 exactly. `web/src/api/client.ts` exports a typed
 `api.get/post/patch/del` that throws `ApiError{code,message,details,status}`.

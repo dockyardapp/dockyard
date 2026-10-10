@@ -3,7 +3,7 @@ import { endpoints, errorMessage } from '../api/client';
 import type { AdminUser, CloudflareStatus, SettingsView, UserRole } from '../api/types';
 import { usePolling } from '../hooks/usePolling';
 import { useAuth } from '../hooks/useAuth';
-import { CloudflarePanel } from './TunnelsPage';
+import { CloudflarePanel } from '../components/CloudflarePanel';
 import { AllocationDialog } from '../components/AllocationDialog';
 import { UpdateCard } from '../components/UpdateCard';
 import {
