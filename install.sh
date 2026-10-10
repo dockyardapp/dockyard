@@ -644,7 +644,7 @@ Nothing is written until the last screen, so you can back out at any point." || 
     tui_menu "What certificate?" \
 "A self-signed one works immediately. Let's Encrypt needs a public domain." "$cert_default" \
       "Self-signed|Generated now, for the name you give next. Browsers warn until you accept it, which is fine for a panel only you reach." \
-      "Let's Encrypt|A certificate every browser trusts. It needs a domain that already points here and port 80 reachable from the internet." || return 1
+      "Let's Encrypt|A certificate every browser trusts. It needs a domain you control, with a DNS record already pointing at this host, and port 80 reachable from the internet." || return 1
     case "$TUI_CHOICE" in
       0) CERT_MODE="self-signed" ;;
       1) CERT_MODE="letsencrypt" ;;
@@ -652,9 +652,19 @@ Nothing is written until the last screen, so you can back out at any point." || 
 
     # --- the name
     if [ "$CERT_MODE" = "letsencrypt" ]; then
+      # Name the actual record to create and the address to point it at. "Must already resolve" is
+      # only actionable if you already know DNS, and the certificate authority gives no useful error
+      # when it cannot reach the name: it just fails, which reads as an installer problem.
       tui_input "The domain" \
-"This name must already resolve to this host, and port 80 must be reachable from
-the internet, or the certificate authority cannot confirm you own it." "${DOMAIN:-}" || return 1
+"Give a name you control. It needs a DNS A record pointing at this host before the
+certificate can be issued, and port 80 must be reachable from the internet.
+
+Create the record at your DNS provider, for the name you type below:
+
+    type: A      name: <the name>      value: $(detect_host_ip)
+
+Then allow a few minutes for it to propagate. If the record is not in place the
+certificate authority cannot confirm you own the name and will refuse." "${DOMAIN:-}" || return 1
       DOMAIN="$TUI_TEXT"
       if [ -z "$DOMAIN" ]; then
         tui_message "A domain is required" \
@@ -725,6 +735,10 @@ work: either goes into the certificate, and either will match." "${DOMAIN:-$(det
   # --- the first account
   tui_input "The first account" \
 "The panel mounts the Docker socket, so whoever can sign in controls this host.
+
+Let's Encrypt also registers an account with this address, so it has to be a real
+one you can receive mail at: a reserved domain such as .local is refused.
+
 Leave the password blank and one will be generated and shown once at the end." "$ADMIN_EMAIL" || return 1
   [ -n "$TUI_TEXT" ] && ADMIN_EMAIL="$TUI_TEXT"
 
@@ -827,6 +841,25 @@ derive_settings() {
     COMPOSE_PROFILES_VALUE="proxy"
   else
     COMPOSE_PROFILES_VALUE=""
+  fi
+
+  # Let's Encrypt registers an ACME account against this address, and the ACME server refuses one it
+  # cannot treat as real. Measured: passed the installer's own default, certbot answers "the ACME
+  # server believes admin@dockyard.local is an invalid email address" and issues nothing, so the Let's
+  # Encrypt path could not succeed without an explicit address. It failed looking like a DNS problem
+  # too, because the failure message blamed DNS. Refuse up front, while nothing has been written.
+  if [ "$CERT_MODE" = "letsencrypt" ]; then
+    LE_EMAIL_OK="yes"
+    case "$ADMIN_EMAIL" in
+      *@*.*) ;;
+      *) LE_EMAIL_OK="no" ;;
+    esac
+    case "$ADMIN_EMAIL" in
+      *@*.local|*@*.localhost|*@*.invalid|*@*.test|*@*.example) LE_EMAIL_OK="no" ;;
+    esac
+    if [ "$LE_EMAIL_OK" != "yes" ]; then
+      die "Let's Encrypt needs a contact address the certificate authority will accept, and '$ADMIN_EMAIL' is not one: it refuses reserved domains such as .local, so no account can be registered and no certificate will be issued. Pass --email you@yourdomain, or use --cert self-signed, which needs no contact address."
+    fi
   fi
 }
 
@@ -1306,6 +1339,19 @@ render_nginx_config() {
   say "rendered $(basename "$out") ($which)"
 }
 
+# nginx reads its config once, at startup. dockyard.conf is bind-mounted as a single file, so the
+# container holds the inode it resolved when it started; render_nginx_config writes a new file and
+# renames it into place, which is a different inode, and nginx then goes on serving the old config.
+# A reload does not help, because the container cannot see the new file at all. Only recreating the
+# container re-resolves the mount. Measured: after re-rendering, `nginx -s reload` still served the
+# previous certificate. Recreating also repairs a container left half-created by a failed port bind,
+# which is the state that crash-loops on `host not found in upstream`.
+nginx_apply_config() {
+  if ! run "${COMPOSE[@]}" up -d --force-recreate --no-deps nginx; then
+    die "'${COMPOSE[*]} up -d --force-recreate --no-deps nginx' failed. The output above says why."
+  fi
+}
+
 # Everything the proxy needs before anything starts. The rendered config has to exist first: it is a
 # bind-mount source, and Docker turns a missing bind-mount source into an empty directory, which nginx
 # then fails to read as a config.
@@ -1377,22 +1423,43 @@ setup_letsencrypt() {
       certbot/certbot certonly --webroot -w /var/www/certbot \
         -d "$DOMAIN" --email "$ADMIN_EMAIL" --agree-tos --no-eff-email \
         --non-interactive --keep-until-expiring; then
-    warn "Let's Encrypt could not confirm that $DOMAIN points here."
-    warn "That needs the domain to resolve to this host's public address and port 80 to be reachable"
-    warn "from the internet. The panel is running on plain HTTP meanwhile, so it is reachable and"
-    warn "sign-in works. Re-run with the DNS fixed and the same --proxy --cert letsencrypt --domain,"
-    warn "or drop to --cert self-signed to use a certificate that needs no validation."
-    die "no certificate was issued, so nginx was left on the plain HTTP config rather than being"
+    warn "Let's Encrypt did not issue a certificate for $DOMAIN. Its own reason is in the certbot"
+    warn "output above, and in /var/log/letsencrypt inside the certbot container."
+    warn "The common cause is DNS: $DOMAIN needs an A record pointing at this host's public address,"
+    warn "$(detect_host_ip). Create or correct it at your DNS provider, then allow a few minutes to"
+    warn "propagate before re-running. Port 80 must also be reachable from the internet."
+
+    # Do not leave the panel on plain HTTP. derive_settings pairs TLS with a Secure session cookie, so
+    # in the HTTP state that cookie is one a browser will not send back: sign-in appears to succeed and
+    # then does not stick, while curl keeps working, and this message used to claim sign-in was fine.
+    # A self-signed certificate keeps TLS, the cookie and the panel's own links consistent, and leaves
+    # a panel that can actually be signed into. It is replaceable once the record is in place.
+    warn "Falling back to a self-signed certificate for $DOMAIN so the panel stays usable over TLS."
+    warn "A browser will warn once about it. Re-run with the DNS fixed and the same"
+    warn "--proxy --cert letsencrypt --domain to replace it with one every browser trusts."
+    CERT_MODE="self-signed"
+    GEN="$INSTALL_DIR/deploy/nginx/gen-cert.sh"
+    [ -x "$GEN" ] || die "$GEN is missing or not executable, so no fallback certificate can be made."
+    GEN_OUT="$(run "$GEN" "$DOMAIN" "$NGINX_CERTS")" || die "generating a self-signed certificate for $DOMAIN failed. The output above says why."
+    NGINX_CERT_FILE="$(printf '%s\n' "$GEN_OUT" | sed -n 's/^CERT_FILE=//p' | head -1)"
+    NGINX_KEY_FILE="$(printf '%s\n' "$GEN_OUT" | sed -n 's/^KEY_FILE=//p' | head -1)"
+    if [ -z "$NGINX_CERT_FILE" ] || [ -z "$NGINX_KEY_FILE" ]; then
+      die "gen-cert.sh did not report the paths it wrote, so the nginx config cannot be rendered."
+    fi
+    render_nginx_config tls
+    nginx_apply_config
+    say "nginx is serving TLS for $DOMAIN with a self-signed certificate"
+    return 0
   fi
 
   NGINX_CERT_FILE="live/$DOMAIN/fullchain.pem"
   NGINX_KEY_FILE="live/$DOMAIN/privkey.pem"
   render_nginx_config tls
 
-  # The config file is bind-mounted read-only, so nginx has to be told to re-read it.
-  if ! run "${COMPOSE[@]}" exec -T nginx nginx -s reload; then
-    die "nginx would not reload the TLS config. 'cd $INSTALL_DIR && ${COMPOSE[*]} logs nginx' says why."
-  fi
+  # A reload would not do here: the config has just been replaced by rename, so the container's
+  # single-file bind mount still points at the old inode and nginx would go on serving the HTTP config
+  # it started with, leaving the new certificate unused.
+  nginx_apply_config
   say "nginx is serving TLS for $DOMAIN"
 }
 
@@ -1429,13 +1496,8 @@ fi
 # name (--domain) leaves the nginx service definition untouched, so compose leaves the container alone
 # and the newly rendered config is never loaded: nginx keeps handing out the previous certificate,
 # which is a name mismatch for the new one, and the site breaks while every file on disk looks right.
-# Recreating it also repairs a container left half-created by an earlier failed port bind, which is
-# the state that crash-loops on `host not found in upstream`. Dependencies are left alone: they are
-# already up and correct.
 if [ "$PROXY_ENABLE" = "yes" ]; then
-  if ! "${COMPOSE[@]}" up -d --force-recreate --no-deps nginx; then
-    die "'${COMPOSE[*]} up -d --force-recreate --no-deps nginx' failed. The output above says why."
-  fi
+  nginx_apply_config
   say "nginx recreated, so the config it is serving is the one just rendered"
 fi
 
