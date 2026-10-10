@@ -36,15 +36,18 @@
 #   --http-port N       nginx HTTP port (default 80)
 #   --https-port N      nginx HTTPS port (default 443)
 #   --tui               force the interactive setup even when it would not normally run
-#   --no-tui            never run it; take the flags and the defaults as given
+#   --no-tui            never run it; take the flags and the defaults as given, with no prompts
 #   --dry-run           print what would happen and change nothing
 #   -h, --help          this
 #
-# Run with no flags on a terminal and it walks you through the choices it cannot make for you: how
-# the panel should be reached, whether nginx terminates TLS, what certificate to use, and which
-# address to listen on. Passing any of --proxy, --cert, --domain, --bind or --email is taken as
-# having answered, and the questions are skipped. Piped into bash with no terminal it stays
-# non-interactive and uses the defaults, so `curl | bash` still installs unattended.
+# The questions are the way to configure it, not the flags. On a terminal it walks you through how
+# the panel should be reached, whether nginx terminates TLS, what certificate to use, which name it
+# is issued for, which address to listen on, which ports, and the first account.
+#
+# Flags do not skip the questions, they pre-fill them: passing one means that answer is already
+# given, and that screen opens on it so you can see it and change your mind. --no-tui is what makes a
+# run fully unattended, taking the flags and the defaults as given. Piped into bash with no terminal
+# it is unattended anyway, so `curl | bash` still installs with no prompts.
 #
 # Why nginx is off by default: it needs ports 80 and 443, and that is a decision about the host, not
 # about the app. When it is on, the panel is republished on 127.0.0.1 so nginx is the only public
@@ -97,6 +100,14 @@ PROXY_DECIDED="no"
 # Whether --bind was given. With the proxy on, that address belongs to nginx rather than the panel,
 # so it has to be told apart from the default.
 BIND_SET="no"
+# Whether each of the TUI's own questions was answered on the command line, so that screen can open
+# on that answer. A flag pre-fills a question; it does not skip the flow.
+SET_PANEL_PORT="no"
+SET_DOMAIN="no"
+SET_HTTP_PORT="no"
+SET_HTTPS_PORT="no"
+SET_EMAIL="no"
+SET_PASSWORD="no"
 
 COMPOSE=()
 
@@ -238,11 +249,11 @@ INSTALL_DIR="${CHECKOUT_DIR:-/opt/dockyard}"
 while [ $# -gt 0 ]; do
   case "$1" in
     --dir)        [ $# -ge 2 ] || die "--dir needs a path";        INSTALL_DIR="$2"; shift 2 ;;
-    --port)       [ $# -ge 2 ] || die "--port needs a number";     PANEL_PORT="$2";  shift 2 ;;
+    --port)       [ $# -ge 2 ] || die "--port needs a number";     PANEL_PORT="$2";  SET_PANEL_PORT="yes"; shift 2 ;;
     --bind)       [ $# -ge 2 ] || die "--bind needs an address";   PANEL_BIND="$2"; BIND_SET="yes"; DECIDED="yes"; shift 2 ;;
     --public-url) [ $# -ge 2 ] || die "--public-url needs a URL";  PUBLIC_URL="$2";   shift 2 ;;
-    --email)      [ $# -ge 2 ] || die "--email needs an address";  ADMIN_EMAIL="$2"; shift 2 ;;
-    --password)   [ $# -ge 2 ] || die "--password needs a value";  ADMIN_PASSWORD="$2"; shift 2 ;;
+    --email)      [ $# -ge 2 ] || die "--email needs an address";  ADMIN_EMAIL="$2"; SET_EMAIL="yes"; shift 2 ;;
+    --password)   [ $# -ge 2 ] || die "--password needs a value";  ADMIN_PASSWORD="$2"; SET_PASSWORD="yes"; shift 2 ;;
     --repo)       [ $# -ge 2 ] || die "--repo needs a URL";        REPO_URL="$2";    shift 2 ;;
     --branch)     [ $# -ge 2 ] || die "--branch needs a name";     BRANCH="$2";      shift 2 ;;
     --no-admin)   SET_ADMIN="no"; shift ;;
@@ -251,9 +262,9 @@ while [ $# -gt 0 ]; do
     --proxy)      PROXY_ENABLE="yes"; DECIDED="yes"; PROXY_DECIDED="yes"; shift ;;
     --no-proxy)   PROXY_ENABLE="no";  DECIDED="yes"; PROXY_DECIDED="yes"; shift ;;
     --cert)       [ $# -ge 2 ] || die "--cert needs a mode";  CERT_MODE="$2"; CERT_MODE_SET="yes"; DECIDED="yes"; shift 2 ;;
-    --domain)     [ $# -ge 2 ] || die "--domain needs a name"; DOMAIN="$2";   DECIDED="yes"; shift 2 ;;
-    --http-port)  [ $# -ge 2 ] || die "--http-port needs a number";  PROXY_HTTP_PORT="$2";  DECIDED="yes"; shift 2 ;;
-    --https-port) [ $# -ge 2 ] || die "--https-port needs a number"; PROXY_HTTPS_PORT="$2"; DECIDED="yes"; shift 2 ;;
+    --domain)     [ $# -ge 2 ] || die "--domain needs a name"; DOMAIN="$2";   DECIDED="yes"; SET_DOMAIN="yes"; shift 2 ;;
+    --http-port)  [ $# -ge 2 ] || die "--http-port needs a number";  PROXY_HTTP_PORT="$2";  DECIDED="yes"; SET_HTTP_PORT="yes"; shift 2 ;;
+    --https-port) [ $# -ge 2 ] || die "--https-port needs a number"; PROXY_HTTPS_PORT="$2"; DECIDED="yes"; SET_HTTPS_PORT="yes"; shift 2 ;;
     --tui)        TUI="yes"; shift ;;
     --no-tui)     TUI="no"; shift ;;
     --dry-run)    DRY_RUN="yes"; DECIDED="yes"; shift ;;
@@ -284,10 +295,26 @@ if [ "$PROXY_ENABLE" = "yes" ] && [ "$CERT_MODE_SET" = "no" ] && [ "$DECIDED" = 
   CERT_MODE="self-signed"
 fi
 
-# A certificate needs a name to be issued for. An IP is a legitimate name here (the self-signed path
-# puts it in the SAN, and a browser will then match it), so this is only about having *something*.
+# A certificate needs a name to be issued for, and a bare IP is a legitimate one: gen-cert.sh types it
+# as an IP: SAN, so a browser matches it on the name even though the certificate is self-signed.
+# Bare-IP is therefore a first-class mode rather than an error, and the host's own address is
+# detected when no --domain was given, so `--proxy --cert self-signed` works on a box with no DNS.
+# Let's Encrypt is the exception: it validates over HTTP against a name it can resolve publicly and
+# refuses an IP outright, so that one combination is worth stopping on rather than failing later.
 if [ "$CERT_MODE" != "none" ] && [ -z "$DOMAIN" ] && [ "$DECIDED" = "yes" ]; then
-  die "--cert $CERT_MODE needs --domain NAME (a domain, or this host's IP)."
+  DOMAIN="$(detect_host_ip)"
+  if [ -z "$DOMAIN" ] || [ "$DOMAIN" = "localhost" ]; then
+    die "--cert $CERT_MODE needs --domain NAME, and this host's own address could not be detected."
+  fi
+  DOMAIN_AUTO="yes"
+  say "no --domain given, so the certificate is issued for this host's own address: $DOMAIN"
+fi
+
+if [ "$CERT_MODE" = "letsencrypt" ] && [ -n "$DOMAIN" ]; then
+  case "$DOMAIN" in
+    *[!0-9.]*) ;;  # has a non-digit: a hostname, which is what Let's Encrypt can validate
+    *) die "Let's Encrypt cannot issue for an IP address ($DOMAIN). Use --cert self-signed for a bare IP, or point a real domain at this host." ;;
+  esac
 fi
 
 # ---------------------------------------------------------------------------- the interactive setup
@@ -530,6 +557,31 @@ Enter installs. q goes back to the questions."
 # DOMAIN, the bind addresses, the proxy ports and the first account. The caller owns the terminal:
 # fd 3 is already open by the time this runs.
 tui_configure() {
+  # Which menu each question opens on, and what each text field starts as. A flag means that answer
+  # is already given: the screen opens on it rather than the question being skipped, so a run driven
+  # by flags still shows every decision before anything is written.
+  local reach_default cert_default bind_default ports_default panel_note
+  reach_default=0
+  if [ "$PROXY_DECIDED" = "yes" ]; then
+    if [ "$PROXY_ENABLE" = "no" ]; then
+      reach_default=2
+    elif [ "$CERT_MODE" = "none" ]; then
+      reach_default=1
+    fi
+  fi
+  cert_default=0
+  [ "$CERT_MODE" = "letsencrypt" ] && cert_default=1
+  case "${PUBLIC_BIND:-}" in
+    127.0.0.1) bind_default=1 ;;
+    ""|0.0.0.0) bind_default=0 ;;
+    *)          bind_default=2 ;;
+  esac
+  ports_default=0
+  if { [ "$SET_HTTP_PORT" = "yes" ] || [ "$SET_HTTPS_PORT" = "yes" ]; } &&
+     { [ "$PROXY_HTTP_PORT" != "80" ] || [ "$PROXY_HTTPS_PORT" != "443" ]; }; then
+    ports_default=1
+  fi
+
   tui_colours
   tui_begin
 
@@ -543,7 +595,7 @@ Nothing is written until the last screen, so you can back out at any point." || 
 
   # --- how the panel is reached
   tui_menu "How should the panel be reached?" \
-"nginx is the only public door, and the panel moves to 127.0.0.1 behind it." 0 \
+"nginx is the only public door, and the panel moves to 127.0.0.1 behind it." "$reach_default" \
     "Behind nginx, with TLS|Recommended on a host with a public address. nginx terminates TLS, and the panel stops being published on every interface." \
     "Behind nginx, plain HTTP|For a host where something else already terminates TLS, or that is only reached over a tunnel." \
     "Directly, no proxy|The panel is the door. Plain HTTP, on whatever address you pick next." || return 1
@@ -557,7 +609,7 @@ Nothing is written until the last screen, so you can back out at any point." || 
   # --- the certificate
   if [ "$CERT_MODE" != "none" ]; then
     tui_menu "What certificate?" \
-"A self-signed one works immediately. Let's Encrypt needs a public domain." 0 \
+"A self-signed one works immediately. Let's Encrypt needs a public domain." "$cert_default" \
       "Self-signed|Generated now, for the name you give next. Browsers warn until you accept it, which is fine for a panel only you reach." \
       "Let's Encrypt|A certificate every browser trusts. It needs a domain that already points here and port 80 reachable from the internet." || return 1
     case "$TUI_CHOICE" in
@@ -569,7 +621,7 @@ Nothing is written until the last screen, so you can back out at any point." || 
     if [ "$CERT_MODE" = "letsencrypt" ]; then
       tui_input "The domain" \
 "This name must already resolve to this host, and port 80 must be reachable from
-the internet, or the certificate authority cannot confirm you own it." "" || return 1
+the internet, or the certificate authority cannot confirm you own it." "${DOMAIN:-}" || return 1
       DOMAIN="$TUI_TEXT"
       if [ -z "$DOMAIN" ]; then
         tui_message "A domain is required" \
@@ -580,7 +632,7 @@ on. Go back and either give one, or choose a self-signed certificate instead." |
     else
       tui_input "The name on the certificate" \
 "The address you will type to reach the panel. A domain or this host's IP both
-work: either goes into the certificate, and either will match." "$(detect_host_ip)" || return 1
+work: either goes into the certificate, and either will match." "${DOMAIN:-$(detect_host_ip)}" || return 1
       DOMAIN="$TUI_TEXT"
       if [ -z "$DOMAIN" ]; then
         tui_message "A name is required" \
@@ -592,7 +644,7 @@ work: either goes into the certificate, and either will match." "$(detect_host_i
 
   # --- which address the public door listens on
   tui_menu "Which address should it listen on?" \
-"This is the address the panel (or nginx, when it is in front) is published on." 0 \
+"This is the address the panel (or nginx, when it is in front) is published on." "$bind_default" \
     "All interfaces (0.0.0.0)|Reachable from anywhere this host is reachable from." \
     "Loopback only (127.0.0.1)|Only from this machine. Reach it through a tunnel, an SSH forward, or your own proxy." \
     "A specific address|Type one, for example 10.0.0.5 or a Tailscale address." || return 1
@@ -600,7 +652,7 @@ work: either goes into the certificate, and either will match." "$(detect_host_i
     0) PUBLIC_BIND="0.0.0.0" ;;
     1) PUBLIC_BIND="127.0.0.1" ;;
     2)
-      tui_input "Which address?" "The address to publish on." "$(detect_host_ip)" || return 1
+      tui_input "Which address?" "The address to publish on." "${PUBLIC_BIND:-$(detect_host_ip)}" || return 1
       PUBLIC_BIND="$TUI_TEXT"
       if [ -z "$PUBLIC_BIND" ]; then
         tui_message "An address is required" "Go back and pick one of the first two, or type an address." || return 1
@@ -611,15 +663,27 @@ work: either goes into the certificate, and either will match." "$(detect_host_i
 
   # --- the ports nginx listens on
   if [ "$PROXY_ENABLE" = "yes" ]; then
+    # The panel's own port is not a question here, because with nginx in front it is internal. It is
+    # not always left alone either: if it collides with the proxy's ports the installer moves it (see
+    # derive_settings), so say which of the two is about to happen rather than claiming a port that
+    # may not survive the install.
+    if [ "$PANEL_PORT" = "$PROXY_HTTP_PORT" ] || [ "$PANEL_PORT" = "$PROXY_HTTPS_PORT" ]; then
+      panel_note="The panel is on $PANEL_PORT, which nginx is about to take, so the panel moves to 8000."
+    else
+      panel_note="The panel itself stays on $PANEL_PORT, behind nginx."
+    fi
     tui_menu "Which ports should nginx use?" \
-"These are the host's ports. The panel itself stays on $PANEL_PORT." 0 \
+"These are the host's ports. $panel_note" "$ports_default" \
       "The standard ones (80 and 443)|What a browser assumes, and what Let's Encrypt needs." \
       "Different ports|For a host where 80 or 443 is already taken." || return 1
-    if [ "$TUI_CHOICE" -eq 1 ]; then
-      tui_input "HTTP port" "Plain HTTP. Keep it if you want the redirect to https to work." "8080" || return 1
+    if [ "$TUI_CHOICE" -eq 0 ]; then
+      PROXY_HTTP_PORT="80"
+      PROXY_HTTPS_PORT="443"
+    else
+      tui_input "HTTP port" "Plain HTTP. Keep it if you want the redirect to https to work." "$PROXY_HTTP_PORT" || return 1
       PROXY_HTTP_PORT="$TUI_TEXT"
       case "$PROXY_HTTP_PORT" in ''|*[!0-9]*) PROXY_HTTP_PORT="8080" ;; esac
-      tui_input "HTTPS port" "The TLS port." "8443" || return 1
+      tui_input "HTTPS port" "The TLS port." "$PROXY_HTTPS_PORT" || return 1
       PROXY_HTTPS_PORT="$TUI_TEXT"
       case "$PROXY_HTTPS_PORT" in ''|*[!0-9]*) PROXY_HTTPS_PORT="8443" ;; esac
     fi
@@ -631,15 +695,21 @@ work: either goes into the certificate, and either will match." "$(detect_host_i
 Leave the password blank and one will be generated and shown once at the end." "$ADMIN_EMAIL" || return 1
   [ -n "$TUI_TEXT" ] && ADMIN_EMAIL="$TUI_TEXT"
 
-  TUI_SECRET="yes"
-  tui_input "Password for $ADMIN_EMAIL" \
+  # --password already answered this. Asking again and taking the blank as "generate one" would
+  # silently discard the flag, so keep what was given and skip the screen.
+  if [ "$SET_PASSWORD" = "yes" ] && [ -n "$ADMIN_PASSWORD" ]; then
+    :
+  else
+    TUI_SECRET="yes"
+    tui_input "Password for $ADMIN_EMAIL" \
 "Leave this blank to have one generated. It is shown once at the end of the
 install and written to the config file, which is mode 0600." "" || return 1
-  TUI_SECRET="no"
-  if [ -n "$TUI_TEXT" ]; then
-    ADMIN_PASSWORD="$TUI_TEXT"
-  else
-    ADMIN_PASSWORD=""
+    TUI_SECRET="no"
+    if [ -n "$TUI_TEXT" ]; then
+      ADMIN_PASSWORD="$TUI_TEXT"
+    else
+      ADMIN_PASSWORD=""
+    fi
   fi
 
   # --- the summary
@@ -669,6 +739,21 @@ derive_settings() {
       PROXY_BIND="$PANEL_BIND"
     fi
     PANEL_BIND="127.0.0.1"
+
+    # The panel must not want a port the proxy publishes. On loopback those are the same address, so
+    # a panel on 80 and nginx on 80 collide, and compose aborts with "Bind for 127.0.0.1:80 failed:
+    # port is already allocated" AFTER it has recreated the panel. What that leaves behind is worse
+    # than the error: nginx exists but never joined the network, so it crash-loops on
+    # `host not found in upstream "panel"`, and a later `up -d` reports success while reusing the
+    # broken container. The panel looks healthy on its own port and the site is a 502. Move the panel
+    # rather than fail, and say so.
+    if [ "$PANEL_PORT" = "$PROXY_HTTP_PORT" ] || [ "$PANEL_PORT" = "$PROXY_HTTPS_PORT" ]; then
+      PANEL_PORT_MOVED_FROM="$PANEL_PORT"
+      PANEL_PORT=8000
+      while [ "$PANEL_PORT" = "$PROXY_HTTP_PORT" ] || [ "$PANEL_PORT" = "$PROXY_HTTPS_PORT" ]; do
+        PANEL_PORT=$((PANEL_PORT + 1))
+      done
+    fi
   elif [ -n "${PUBLIC_BIND:-}" ]; then
     PANEL_BIND="$PUBLIC_BIND"
   fi
@@ -712,16 +797,24 @@ derive_settings() {
   fi
 }
 
-# Runs the setup unless it was switched off, the flags already answered the questions, or there is no
-# terminal to draw on.
+# Runs the setup unless it was switched off, or there is no terminal to draw on. Flags pre-fill the
+# questions rather than skipping them: skipping was the old behaviour, and it meant `--proxy` alone
+# silently took the default for the certificate, the name, the bind address, the ports and the
+# account, so the operator got a configuration they were never shown. A flag now means "this answer
+# is already given" and the screen opens on it.
 maybe_run_tui() {
   if [ "$TUI" = "no" ]; then
     say "interactive setup skipped (--no-tui)"
     return 0
   fi
-  if [ "$TUI" = "auto" ] && [ "$DECIDED" = "yes" ]; then
-    say "flags given, so the interactive setup is skipped"
+  # A dry run reports what would happen; stopping for input would defeat it, and the header comment
+  # has always promised it changes nothing.
+  if [ "$TUI" = "auto" ] && [ "$DRY_RUN" = "yes" ]; then
+    say "dry run, so the flags and the defaults are used without stopping for input"
     return 0
+  fi
+  if [ "$TUI" = "auto" ] && [ "$DECIDED" = "yes" ]; then
+    say "flags given, so the setup opens with those answers already filled in"
   fi
   if ! tui_open; then
     if [ "$TUI" = "yes" ]; then
@@ -990,6 +1083,13 @@ if [ -f "$ENV_FILE" ]; then
     set_env_key PANEL_BIND "$PANEL_BIND"
     set_env_key NODE_ENV "$NODE_ENV_VALUE"
     set_env_key COOKIE_SECURE "$COOKIE_SECURE_VALUE"
+    # PANEL_PORT is applied too, because the proxy can force it to move (see derive_settings): a panel
+    # on the same loopback port as nginx cannot start, and leaving the old value in .env would keep
+    # the collision in place across every future `docker compose up`.
+    set_env_key PANEL_PORT "$PANEL_PORT"
+    if [ -n "${PANEL_PORT_MOVED_FROM:-}" ]; then
+      say "the panel moved from port $PANEL_PORT_MOVED_FROM to $PANEL_PORT, because nginx publishes $PANEL_PORT_MOVED_FROM"
+    fi
     if [ "$PROXY_ENABLE" = "yes" ]; then
       say "applied the proxy settings to the existing .env (nginx on $PROXY_BIND:$PROXY_HTTP_PORT/$PROXY_HTTPS_PORT)"
     else
@@ -1317,6 +1417,34 @@ if [ "$HEALTHY" != "yes" ]; then
   die "the panel is not answering. The container log is above."
 fi
 say "answered after about $((i * 2))s"
+
+# With the proxy on, "the stack started" is not the same as "the door is open". nginx resolves the
+# upstream hostname at startup and refuses to start at all when it cannot, so it sits in a restart
+# loop while `compose ps` reports it as running; from outside that is a 502 and nothing in the install
+# output says why. The cause is almost always a container that never joined the network (which is what
+# a failed port bind leaves behind). Ask the proxy itself, and fail here with its log if it is not up.
+if [ "$PROXY_ENABLE" = "yes" ]; then
+  step "Waiting for nginx to answer"
+  PROXY_HEALTH="http://127.0.0.1:$PROXY_HTTP_PORT/api/system/health"
+  j=1
+  PROXY_UP="no"
+  while [ "$j" -le 30 ]; do
+    if curl -fsS -o /dev/null "$PROXY_HEALTH" 2>/dev/null; then
+      PROXY_UP="yes"
+      break
+    fi
+    j=$((j + 1))
+    sleep 2
+  done
+  if [ "$PROXY_UP" != "yes" ]; then
+    warn "nginx did not answer $PROXY_HEALTH within 60s, so the panel is not reachable through it."
+    "${COMPOSE[@]}" ps
+    printf '\n'
+    "${COMPOSE[@]}" logs --tail 20 nginx
+    die "the proxy is not serving. Its log is above: 'host not found in upstream' means the container is not on the network, which a failed port bind leaves behind. Recreate it with '${COMPOSE[*]} up -d --force-recreate nginx'."
+  fi
+  say "nginx answered after about $((j * 2))s"
+fi
 
 step "Verifying what it is serving"
 INFO="$(curl -fsS "http://127.0.0.1:$PANEL_PORT/api/system/info" 2>/dev/null || true)"
