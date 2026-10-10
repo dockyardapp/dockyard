@@ -119,9 +119,19 @@ build_and_restart() {
   BUILD_TIME="$(date -u +%FT%TZ)"
   export GIT_COMMIT BUILD_TIME
   log "building the panel image at $commit"
-  "${COMPOSE[@]}" build panel 2>&1 | tee -a "$LOG_FILE" >&2
+  # Every step is checked by hand, and that is not belt-and-braces: this function is called from an
+  # `if !`, and bash suspends `set -e` for the whole body of a function invoked in a condition. A
+  # failing build would otherwise fall straight through to the restart, the function would return
+  # the restart's status, and the caller would call a stale image a successful update.
+  if ! "${COMPOSE[@]}" build panel 2>&1 | tee -a "$LOG_FILE" >&2; then
+    log "the panel image failed to build"
+    return 1
+  fi
   log "recreating the panel container"
-  "${COMPOSE[@]}" up -d 2>&1 | tee -a "$LOG_FILE" >&2
+  if ! "${COMPOSE[@]}" up -d 2>&1 | tee -a "$LOG_FILE" >&2; then
+    log "the panel container failed to start"
+    return 1
+  fi
 }
 
 # --------------------------------------------------------------------------- request
