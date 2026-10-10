@@ -193,7 +193,7 @@ test('a template file on disk shows up without a restart, and a bad one is repor
         slug,
         name: 'Dropped in by a test',
         category: 'other',
-        icon: '🧪',
+        icon: 'template',
         description: 'Written by the end-to-end suite.',
         image: 'traefik/whoami',
         tag: 'v1.11.0',

@@ -3,7 +3,7 @@
   "slug": "mongodb",
   "name": "MongoDB",
   "category": "database",
-  "icon": "🍃",
+  "icon": "template",
   "description": "MongoDB document database.",
   "image": "mongo",
   "tag": "7.0",

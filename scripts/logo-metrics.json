@@ -11,6 +11,28 @@
   "coverage": 29.6
  },
  {
+  "tpl": "gitea",
+  "si": "gitea",
+  "x": 0,
+  "y": 4.6,
+  "w": 24,
+  "h": 14.8,
+  "aspect": 1.62,
+  "inkH": 12.3,
+  "coverage": 66.2
+ },
+ {
+  "tpl": "mariadb",
+  "si": "mariadb",
+  "x": 0,
+  "y": 4.26,
+  "w": 24,
+  "h": 15.48,
+  "aspect": 1.55,
+  "inkH": 12.9,
+  "coverage": 31.5
+ },
+ {
   "tpl": "mysql",
   "si": "mysql",
   "x": 0,
@@ -66,6 +88,17 @@
   "coverage": 60.5
  },
  {
+  "tpl": "caddy",
+  "si": "caddy",
+  "x": 0,
+  "y": 0.47,
+  "w": 24,
+  "h": 23.06,
+  "aspect": 1.04,
+  "inkH": 19.2,
+  "coverage": 30
+ },
+ {
   "tpl": "python-app",
   "si": "python",
   "x": -0.06,
@@ -108,6 +141,28 @@
   "aspect": 1,
   "inkH": 20,
   "coverage": 73.4
+ },
+ {
+  "tpl": "syncthing",
+  "si": "syncthing",
+  "x": 0,
+  "y": 0,
+  "w": 24,
+  "h": 24,
+  "aspect": 1,
+  "inkH": 20,
+  "coverage": 61.5
+ },
+ {
+  "tpl": "vaultwarden",
+  "si": "vaultwarden",
+  "x": 0,
+  "y": 0,
+  "w": 24,
+  "h": 24,
+  "aspect": 1,
+  "inkH": 20,
+  "coverage": 49.8
  },
  {
   "tpl": "postgres",

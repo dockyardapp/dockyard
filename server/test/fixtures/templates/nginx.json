@@ -3,7 +3,7 @@
   "slug": "nginx",
   "name": "nginx",
   "category": "web",
-  "icon": "🌐",
+  "icon": "template",
   "description": "High-performance HTTP server and reverse proxy.",
   "image": "nginx",
   "tag": "1.27-alpine",

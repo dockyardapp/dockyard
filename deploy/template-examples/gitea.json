@@ -3,7 +3,7 @@
   "slug": "gitea",
   "name": "Gitea",
   "category": "devtools",
-  "icon": "🍵",
+  "icon": "template",
   "description": "Self-hosted Git service with a web UI, issues and pull requests.",
   "image": "gitea/gitea",
   "tag": "1.27.3",

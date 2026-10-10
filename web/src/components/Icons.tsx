@@ -1,7 +1,9 @@
 /**
  * Inline line-icon set. Stroke-based, 16px default, currentColor.
- * No emoji in UI chrome. Template icons are data, and are only rendered as text
- * when the template has no brand mark of its own (see TemplateLogo).
+ *
+ * No emoji anywhere in the product, chrome or content. A template's `icon` names one of these
+ * glyphs, and the templates page shows the product's own brand mark wherever we have one. See
+ * TemplateLogo.
  */
 import type { SVGProps } from 'react';
 
@@ -79,6 +81,14 @@ const PATHS: Record<IconName, string> = {
   link: 'M10 14a4 4 0 005.7 0l3-3a4 4 0 00-5.7-5.7L11.5 7M14 10a4 4 0 00-5.7 0l-3 3A4 4 0 0011 18.7L12.5 17',
   info: 'M12 3a9 9 0 100 18 9 9 0 000-18zM12 11v6M12 7h.01',
 };
+
+/**
+ * Every glyph the app ships, as a runtime set.
+ *
+ * A template's `icon` names one of these rather than carrying a pictograph of its own. Checking
+ * membership is what keeps a legacy or invented value from rendering an empty slot.
+ */
+export const ICON_NAMES: ReadonlySet<string> = new Set(Object.keys(PATHS));
 
 type Props = SVGProps<SVGSVGElement> & { name: IconName; size?: number };
 

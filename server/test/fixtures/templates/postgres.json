@@ -3,7 +3,7 @@
   "slug": "postgres",
   "name": "PostgreSQL",
   "category": "database",
-  "icon": "🐘",
+  "icon": "template",
   "description": "The PostgreSQL object-relational database.",
   "image": "postgres",
   "tag": "16-alpine",

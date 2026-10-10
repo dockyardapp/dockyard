@@ -60,6 +60,16 @@ function specsIn(dir: string): Spec[] {
 const examples = specsIn(path.join(repoRoot, 'deploy', 'template-examples'));
 const checkout = specsIn(path.join(repoRoot, '..', 'dockyard-templates', 'templates'));
 
+/**
+ * Products the repository ships that have no mark we can render, and why. Anything else in the
+ * repository must resolve to its own mark, so a template added without one fails here rather than
+ * quietly showing the neutral glyph.
+ *
+ *   filebrowser  its mark is a full-colour tile illustration that collapses into a blob at 28px
+ *   memcached    no vector mark exists; the project ships a JPEG banner and nothing else
+ */
+const NO_MARK = ['filebrowser', 'memcached'];
+
 describe('template logos', () => {
   it('carries a well-formed mark for every product it knows', () => {
     const keys = Object.keys(TEMPLATE_LOGOS);
@@ -76,6 +86,22 @@ describe('template logos', () => {
       );
       assert.ok(logo.aspect > 0, `${key}: aspect must be positive`);
     }
+  });
+
+  it('has a mark for every template the repository ships, bar the two that have none', () => {
+    const specs = [...examples, ...checkout];
+    assert.ok(specs.length > 0, 'no template files found to check');
+
+    const missing = specs
+      .filter((s) => !logoFor({ slug: s.slug, spec: { image: s.image } }))
+      .map((s) => s.slug);
+
+    assert.deepEqual(
+      [...new Set(missing)].sort(),
+      [...NO_MARK].sort(),
+      `unexpected products without a mark: ${missing.join(', ')}. Add the product to ` +
+        `scripts/gen-template-logos.py and regenerate.`,
+    );
   });
 
   it('matches a template by its slug and by its image', () => {

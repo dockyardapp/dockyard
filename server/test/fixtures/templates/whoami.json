@@ -3,7 +3,7 @@
   "slug": "whoami",
   "name": "whoami",
   "category": "devtools",
-  "icon": "🪪",
+  "icon": "template",
   "description": "Tiny HTTP server that echoes request headers, useful for testing proxies and tunnels.",
   "image": "traefik/whoami",
   "tag": "v1.11.0",

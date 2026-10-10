@@ -176,11 +176,13 @@ keep track of and less likely to be taken.
 Volumes work the same way round: give a path and the container bind-mounts it, or leave it blank and
 Dockyard gives the container a named volume of its own, so the data outlives the container.
 
-Each template card shows the deployed product's real logo. The marks are vendored, not fetched at
-runtime, so the panel works with no outbound access. `web/src/components/templateLogos.ts` is
-generated; to change it, see the header of `scripts/gen-template-logos.py`. A template with no mark
-falls back to its own `icon`, and `server/test/template-logos.test.ts` fails if the repository ships
-a template whose product has no mark.
+Each template card shows the deployed product's real logo, and nothing else: no emoji anywhere in
+the product. The marks are vendored, not fetched at runtime, so the panel works with no outbound
+access. `web/src/components/templateLogos.ts` is generated; to change it, see the header of
+`scripts/gen-template-logos.py`. A product with no mark falls back to the template's own `icon`,
+which names one of the app's glyphs rather than carrying a pictograph.
+`server/test/template-logos.test.ts` fails if the repository ships a template whose product has no
+mark, so adding one is a deliberate act with a reason.
 
 ### Templates from a file
 

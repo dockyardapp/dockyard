@@ -892,7 +892,7 @@ const EMPTY_SPEC = {
   slug: 'my-template',
   name: 'My template',
   category: 'other',
-  icon: '📦',
+  icon: 'template',
   description: '',
   image: 'nginx',
   tag: 'alpine',

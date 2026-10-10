@@ -40,26 +40,40 @@ describe('TemplateLogo', () => {
     expect(container.querySelector('svg')!.getAttribute('fill')).toBe('#E6522C');
   });
 
-  it('falls back to the template icon rather than another product mark', () => {
+  it('falls back to the app glyph rather than another product mark', () => {
     const { container } = render(
-      <TemplateLogo slug="totally-unknown" spec={{ image: 'someone/unknown-thing' }} fallback="🪪" />,
+      <TemplateLogo slug="totally-unknown" spec={{ image: 'someone/unknown-thing' }} />,
     );
 
-    expect(container.querySelector('svg')).toBeNull();
-    expect(container.textContent).toBe('🪪');
+    // No brand mark, and never someone else's: the slot holds one of the app's own glyphs.
+    expect(container.querySelector('svg.tpl-icon')).toBeNull();
+    expect(container.querySelector('.tpl-icon-glyph svg')).not.toBeNull();
   });
 
-  it('falls back to the app icon when there is no template icon either', () => {
-    const { container } = render(<TemplateLogo slug="bare" spec={{ image: 'x/y' }} />);
+  it('uses the glyph a template names when it is one of ours', () => {
+    const generic = render(<TemplateLogo slug="x" spec={{ image: 'x/y' }} />);
+    const chosen = render(<TemplateLogo slug="x" spec={{ image: 'x/y' }} fallback="file" />);
 
-    // The line-icon set draws with currentColor, so the slot is never empty.
-    expect(container.querySelector('svg')).not.toBeNull();
-    expect(container.querySelector('.tpl-icon-text')).not.toBeNull();
+    expect(chosen.container.querySelector('path')!.getAttribute('d')).not.toBe(
+      generic.container.querySelector('path')!.getAttribute('d'),
+    );
+  });
+
+  it('never renders a pictograph, even when the template carries one', () => {
+    // `icon` names one of the app's glyphs. The pictograph below is deliberate test data: it stands
+    // for the emoji an older template carried, and the assertion is that it never reaches the page.
+    const generic = render(<TemplateLogo slug="x" spec={{ image: 'x/y' }} fallback="template" />);
+    const legacy = render(<TemplateLogo slug="x" spec={{ image: 'x/y' }} fallback="🪪" />);
+
+    expect(legacy.container.textContent).toBe('');
+    expect(legacy.container.querySelector('path')!.getAttribute('d')).toBe(
+      generic.container.querySelector('path')!.getAttribute('d'),
+    );
   });
 
   it('does not throw on a template with nothing to match on', () => {
     const { container } = render(<TemplateLogo />);
-    expect(container.querySelector('.tpl-icon-text')).not.toBeNull();
+    expect(container.querySelector('.tpl-icon-glyph')).not.toBeNull();
   });
 });
 

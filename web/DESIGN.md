@@ -313,9 +313,10 @@ signals element size rather than adding decoration.
     abstract to begin with (Uptime Kuma's ring, MinIO's swoosh, Traefik's interlocking lines); that
     is the mark, not a rendering fault.
   A mark whose brand colour falls below 3:1 on the card is lifted within its own hue until it clears
-  (Adminer is the one such mark, `#34567C` to `#3d6692`) and flagged `adjusted` in
-  `templateLogos.ts`. Templates with no mark fall back to their own `icon`, and the mark is
-  `aria-hidden` because the name beside it already says which product it is.
+  (Adminer `#34567C` to `#3d6692`, MariaDB `#003545` to `#006b8c`, Vaultwarden `#000000` to
+  `#636363`) and flagged `adjusted` in `templateLogos.ts`. A product with no mark falls back to the
+  template's own `icon`, which names a glyph in the app's own set, and the mark is `aria-hidden`
+  because the name beside it already says which product it is.
 - **tunnel-guide:** the reference tab on the Tunnels page, beside the list. It explains what a tunnel
   does, compares the three exposure modes and says which to reach for. Reference material is the
   easiest place to import furniture from somewhere else, so it uses only what the page already owns:
@@ -370,8 +371,9 @@ Measured on a host with 261 volumes: 250 rows rendered, the footer reported "Sho
   The single exception is the login screen's decorative half (`login-aside`), which is the only
   surface in the product with no control on it, so it is the only place colour may be the point
   rather than a signal. It draws from the brand indigo family and nothing else.
-- Don't use glassmorphism, or emoji in UI chrome. Template icons are data and are the other
-  exception, and only for a template with no brand mark of its own.
+- Don't use glassmorphism, and don't use emoji anywhere. There is no exception: chrome draws from
+  the app's own line-icon set, and a template shows the deployed product's real brand mark. A
+  product with no mark shows a glyph from that same set, never a pictograph.
 - Don't use pure white as body text. `#f7f8f8` is the ceiling.
 - Don't introduce warm greys into the chrome.
 

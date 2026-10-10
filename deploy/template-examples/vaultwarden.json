@@ -3,7 +3,7 @@
   "slug": "vaultwarden",
   "name": "Vaultwarden",
   "category": "storage",
-  "icon": "🔐",
+  "icon": "template",
   "description": "A small Bitwarden-compatible password server, written in Rust.",
   "image": "vaultwarden/server",
   "tag": "1.37.4",

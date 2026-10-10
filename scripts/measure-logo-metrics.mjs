@@ -18,6 +18,8 @@ const MARKS = {
   'node-app': 'nodedotjs', 'python-app': 'python', 'uptime-kuma': 'uptimekuma',
   grafana: 'grafana', prometheus: 'prometheus', minio: 'minio', n8n: 'n8n',
   rabbitmq: 'rabbitmq', whoami: 'traefikproxy',
+  mariadb: 'mariadb', caddy: 'caddy', gitea: 'gitea',
+  syncthing: 'syncthing', vaultwarden: 'vaultwarden',
 };
 
 const list = await (await fetch(`http://127.0.0.1:${DEBUG_PORT}/json/list`)).json();

@@ -50,6 +50,11 @@ BRAND = {
     "n8n": ("n8n", "n8n"),
     "rabbitmq": ("rabbitmq", "RabbitMQ"),
     "traefikproxy": ("whoami", "Traefik Proxy"),
+    "mariadb": ("mariadb", "MariaDB"),
+    "caddy": ("caddy", "Caddy"),
+    "gitea": ("gitea", "Gitea"),
+    "syncthing": ("syncthing", "Syncthing"),
+    "vaultwarden": ("vaultwarden", "Vaultwarden"),
 }
 
 # Candidate string (a template slug, or the image name's last path segment)
@@ -72,6 +77,13 @@ ALIASES = {
     "n8n": "n8n",
     "rabbitmq": "rabbitmq",
     "whoami": "traefikproxy", "traefik": "traefikproxy", "traefikproxy": "traefikproxy",
+    # MariaDB keeps its own mark: it is a different product from MySQL, and the
+    # seal is what an operator scanning the list is looking for.
+    "mariadb": "mariadb",
+    "caddy": "caddy",
+    "gitea": "gitea",
+    "syncthing": "syncthing",
+    "vaultwarden": "vaultwarden",
 }
 
 CARD = (13, 14, 15)  # rgba(255,255,255,0.02) composited over the #08090a canvas

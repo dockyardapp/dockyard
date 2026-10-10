@@ -3,7 +3,7 @@
   "slug": "redis",
   "name": "Redis",
   "category": "database",
-  "icon": "🧱",
+  "icon": "template",
   "description": "In-memory key/value store with optional persistence.",
   "image": "redis",
   "tag": "7.4-alpine",

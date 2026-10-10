@@ -1,11 +1,9 @@
 /**
  * The real brand mark for a template.
  *
- * The templates deploy software that has a logo of its own, and a card that shows
- * PostgreSQL's elephant or Grafana's flame is scannable in a way that an emoji
- * stand-in is not. Marks come from `templateLogos.ts`, matched on the template's
- * slug or its image name. A product with no mark falls back to the template's own
- * icon.
+ * Every template shows the product's own mark: `templateLogos.ts` matches on the template's slug or
+ * its image name, so a card reads as PostgreSQL's elephant or Grafana's flame rather than as a
+ * generic pictograph. There are no emoji in the product, chrome or content.
  *
  * Marks are fitted to a slot rather than drawn in a square box. The vendor
  * normalises every mark to fill either the width or the height of a 24x24 box,
@@ -14,12 +12,14 @@
  * mark's own tight box to the slot gives every one of them the same height, and
  * the ones that are wider than the slot is wide are the only ones that give it up.
  *
- * Falls back to the template's own `icon` when we have no mark for it, which is
- * the case for anything a user wrote: showing no logo is better than showing the
- * wrong product's logo.
+ * A product we have no mark for falls back to the template's own `icon`, which names one of the
+ * app's glyphs (see Icons.tsx) rather than carrying a pictograph. A neutral glyph is better than
+ * showing the wrong product's logo, and a value that is not one of our glyphs falls back again to
+ * the generic template glyph rather than rendering an empty slot.
  */
 
-import { Icon } from './Icons';
+import { Icon, ICON_NAMES } from './Icons';
+import type { IconName } from './Icons';
 import { logoFor } from './templateLogos';
 
 /**
@@ -37,7 +37,10 @@ export const LOGO_SLOT_HEIGHT = 28;
 type Props = {
   slug?: string | null;
   spec?: { image?: string | null } | null;
-  /** The template's own icon, shown when there is no brand mark. */
+  /**
+   * The template's own icon: the name of one of the app's glyphs, not a pictograph. Shown when
+   * there is no brand mark for the product.
+   */
   fallback?: string | null;
   height?: number;
   width?: number;
@@ -55,9 +58,14 @@ export function TemplateLogo({
   // Decorative either way: the template's name sits beside it, so announcing the
   // mark as well would just make a screen reader say the product twice.
   if (!logo) {
+    // The template's `icon` names one of the app's glyphs. A value that is not one of them, such as
+    // a pictograph an older template carried, falls back to the generic template glyph rather than
+    // rendering an empty slot.
+    const glyph: IconName =
+      fallback && ICON_NAMES.has(fallback) ? (fallback as IconName) : 'template';
     return (
-      <span className="tpl-icon tpl-icon-text" aria-hidden="true" style={{ height }}>
-        {fallback || <Icon name="template" size={height} />}
+      <span className="tpl-icon tpl-icon-glyph" aria-hidden="true" style={{ height }}>
+        <Icon name={glyph} size={height} />
       </span>
     );
   }

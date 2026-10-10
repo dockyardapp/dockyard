@@ -75,7 +75,7 @@ const template: Template = {
   slug: 'uptime-kuma',
   name: 'Uptime Kuma',
   category: 'monitoring',
-  icon: '📈',
+  icon: 'template',
   description: 'Self-hosted uptime monitoring.',
   source: 'remote',
   spec: {
@@ -83,7 +83,7 @@ const template: Template = {
     slug: 'uptime-kuma',
     name: 'Uptime Kuma',
     category: 'monitoring',
-    icon: '📈',
+    icon: 'template',
     description: 'Self-hosted uptime monitoring.',
     image: 'louislam/uptime-kuma',
     tag: '1.23.16',

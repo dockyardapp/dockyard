@@ -3,7 +3,7 @@
   "slug": "grafana",
   "name": "Grafana",
   "category": "monitoring",
-  "icon": "📊",
+  "icon": "template",
   "description": "Dashboards and observability UI.",
   "image": "grafana/grafana",
   "tag": "11.4.0",

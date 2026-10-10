@@ -700,7 +700,7 @@ export type TemplateSpec = {
   schemaVersion: 1;
   slug: string; name: string;
   category: 'database'|'web'|'monitoring'|'storage'|'devtools'|'messaging'|'other';
-  icon: string;                       // single emoji
+  icon: string;                       // a glyph name from the app's own icon set
   description: string;
   image: string; tag: string;         // e.g. 'postgres', '16-alpine'
   ports: Array<{ container: number; label?: string; defaultHost?: number }>;
@@ -759,8 +759,10 @@ React 19 + Vite + TS, `react-router-dom` v7. No CSS framework: hand-written CSS 
 - Load `claude-design` and name the archetype (`operate`) in `web/DESIGN.md`, then run its slop
   self-audit. Load `humanizer` and pass over every string of copy.
 - Density over decoration: monospace for ids/ports/images/logs, tabular numbers for stats,
-  status pills with semantic colour, no gradients-as-decoration, no emoji as UI chrome
-  (template icons excepted — those are data).
+  status pills with semantic colour, no gradients-as-decoration, and **no emoji anywhere**: UI
+  chrome uses the app's own line-icon set, and a template shows the deployed product's real brand
+  mark (`web/src/components/templateLogos.ts`). A template's `icon` names a glyph in that same set,
+  and is what the card shows for a product with no mark.
 - Every interactive control: visible keyboard focus ring, disabled + busy states, and a
   `confirm` step for destructive actions (stop/kill/remove/prune).
 - Empty states with a next action, loading skeletons, and an inline error surface per view.

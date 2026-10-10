@@ -877,7 +877,7 @@ table.data .primary { color: var(--text-primary); font-weight: var(--fw-ui); }
 .tpl-head { display: flex; align-items: center; gap: var(--space-3); }
 /* The logo slot. An SVG mark is fitted into it; the text fallback matches it. */
 .tpl-icon { flex: 0 0 auto; display: block; }
-.tpl-icon-text { display: flex; align-items: center; font-size: 28px; line-height: 1; }
+.tpl-icon-glyph { display: flex; align-items: center; }
 .tpl-name { font-size: var(--fs-sm); font-weight: var(--fw-strong); color: var(--text-primary); }
 .tpl-desc { font-size: var(--fs-xs); color: var(--text-tertiary); flex: 1 1 auto; }
 .tpl-meta { display: flex; gap: var(--space-2); flex-wrap: wrap; align-items: center; font-size: var(--fs-micro); color: var(--text-quaternary); }

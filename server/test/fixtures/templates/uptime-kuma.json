@@ -3,7 +3,7 @@
   "slug": "uptime-kuma",
   "name": "Uptime Kuma",
   "category": "monitoring",
-  "icon": "📈",
+  "icon": "template",
   "description": "Self-hosted uptime monitoring with status pages and alerts.",
   "image": "louislam/uptime-kuma",
   "tag": "1.23.16",
